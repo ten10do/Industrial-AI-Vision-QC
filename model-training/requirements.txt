@@ -1,7 +1,7 @@
 # Frozen on 2026-08-04 after RTX 5060 (sm_120) CUDA smoke test passed.
 # torch must come from the cu128 index:
-#   pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
-torch==2.11.0+cu128
+#   pip install torch==2.14.0 torchvision==0.26.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+torch==2.14.0
 torchvision==0.26.0+cu128
 ultralytics==8.4.115
 opencv-python==4.12.0.88
