@@ -26,7 +26,7 @@
     "jsdom": "^25.0.1",
     "typescript": "^5.6.2",
     "vite": "^5.4.8",
-    "vitest": "^2.1.2"
+    "vitest": "^5.0.0"
   },
   "allowScripts": {
     "@playwright/test@1.62.1": true,
