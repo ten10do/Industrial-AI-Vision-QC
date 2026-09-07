@@ -14,7 +14,7 @@ Security fixes target the default branch and the latest published release. Older
 
 Do not open a public issue for a suspected vulnerability or include credentials, proprietary images, model artifacts, device addresses, or plant topology in a public report.
 
-Use [GitHub private vulnerability reporting](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/security/advisories/new). Include:
+Use [GitHub private vulnerability reporting](https://github.com/ten10do/industrial-ai-vision-qc/security/advisories/new). Include:
 
 - affected revision, component, and deployment mode;
 - reproducible steps or a minimal proof of concept;

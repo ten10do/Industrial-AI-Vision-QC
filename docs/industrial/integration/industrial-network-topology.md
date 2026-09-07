@@ -1,6 +1,6 @@
 # Industrial Network Topology
 
-This document describes a typical deployment topology for the Industrial Vision AI Quality Inspection Platform. It is a reference architecture for site planning, not evidence that a physical factory network or vendor device has already been commissioned.
+This document describes a typical deployment topology for the Industrial AI Visual Inspection and Exception Closed-Loop System. It is a reference architecture for site planning, not evidence that a physical factory network or vendor device has already been commissioned.
 
 ## Reference Topology
 

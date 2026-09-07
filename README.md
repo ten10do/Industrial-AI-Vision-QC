@@ -1,11 +1,11 @@
-# Industrial Vision AI Quality Inspection Platform
+# Industrial AI Visual Inspection and Exception Closed-Loop System
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Backend CI](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/frontend-ci.yml)
-[![Docs CI](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/docs-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/docs-ci.yml)
-[![Latest Release](https://img.shields.io/github/v/release/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/releases/latest)
+[![Backend CI](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/frontend-ci.yml)
+[![Docs CI](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/docs-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/docs-ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/ten10do/industrial-ai-vision-qc)](https://github.com/ten10do/industrial-ai-vision-qc/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Project Status](https://img.shields.io/badge/status-production--candidate--qualified-brightgreen)](docs/release/model-card.md)
 [![Demo](https://img.shields.io/badge/demo-simulator--backed-blueviolet)](docs/demo/demo-showcase.md)
@@ -185,7 +185,7 @@ Primary evidence: [dual-branch report](docs/dual-branch-evaluation-report.md), [
 | Industrial integration | [Network topology](docs/industrial/integration/industrial-network-topology.md) · [Protocol adaptation guide](docs/industrial/integration/protocol-adaptation-guide.md) · [Factory integration guide](docs/industrial/integration/factory-integration-guide.md) |
 | Industrial validation | [Validation strategy](docs/industrial-validation/validation-strategy.md) · [Simulated SAT](docs/industrial-validation/site-acceptance-test.md) · [Data management](docs/industrial-validation/data-management.md) · [Maintenance](docs/industrial-validation/maintenance-plan.md) · [Incident response](docs/industrial-validation/incident-response.md) |
 | Operations | [Deployment](docs/operations/deployment-guide.md) · [SOP](docs/operations/operation-manual.md) · [Rollback](docs/operations/rollback-guide.md) |
-| Release showcase | [Latest release (v1.1.0)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/releases/tag/v1.1.0) · [v1.0.0 notes](docs/release/v1.0.0-release-notes.md) · [Demo flow](docs/demo/demo-showcase.md) |
+| Release showcase | [Latest release (v1.1.0)](https://github.com/ten10do/industrial-ai-vision-qc/releases/tag/v1.1.0) · [v1.0.0 notes](docs/release/v1.0.0-release-notes.md) · [Demo flow](docs/demo/demo-showcase.md) |
 | Design decisions | [DINOv2](docs/decisions/why-dinov2.md) · [ZCA](docs/decisions/why-zca.md) · [Dual branch](docs/decisions/why-dual-branch.md) · [Failed experiments](docs/decisions/failed-experiments.md) |
 | Engineering decisions | [Failure analysis](docs/engineering-decisions/failure-analysis.md) · [Architecture decisions](docs/engineering-decisions/architecture-decisions.md) · [Model rationale](docs/engineering-decisions/model-selection-rationale.md) · [Trade-offs](docs/engineering-decisions/trade-offs.md) |
 | Technical interview trace | [Deep dive](docs/interview/technical-deep-dive.md) · [Architecture](docs/interview/architecture-questions.md) · [AI](docs/interview/ai-model-questions.md) · [Industrial](docs/interview/industrial-engineering-questions.md) |

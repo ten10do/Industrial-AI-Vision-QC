@@ -1,11 +1,11 @@
-# 工业视觉 AI 质量检测平台
+# 工业 AI 视觉质检与异常闭环处理系统
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[![Backend CI](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/frontend-ci.yml)
-[![Docs CI](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/docs-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/actions/workflows/docs-ci.yml)
-[![Latest Release](https://img.shields.io/github/v/release/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform)](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/releases/latest)
+[![Backend CI](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/frontend-ci.yml)
+[![Docs CI](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/docs-ci.yml/badge.svg?branch=main)](https://github.com/ten10do/industrial-ai-vision-qc/actions/workflows/docs-ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/ten10do/industrial-ai-vision-qc)](https://github.com/ten10do/industrial-ai-vision-qc/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Project Status](https://img.shields.io/badge/status-production--candidate--qualified-brightgreen)](docs/release/model-card.md)
 [![Demo](https://img.shields.io/badge/demo-simulator--backed-blueviolet)](docs/demo/demo-showcase.md)
@@ -107,7 +107,7 @@ flowchart LR
 - [工业验证](docs/industrial-validation/validation-strategy.md)
 - [部署与运维](docs/operations/deployment-guide.md)
 - [技术面试追溯](docs/interview/technical-deep-dive.md)
-- [v1.1.0 Release](https://github.com/ten10do/Multimodal-API-Vision-Quality-Inspection-and-Automated-Exception-Handling-Platform/releases/tag/v1.1.0)
+- [v1.1.0 Release](https://github.com/ten10do/industrial-ai-vision-qc/releases/tag/v1.1.0)
 
 ## 本地验证
 

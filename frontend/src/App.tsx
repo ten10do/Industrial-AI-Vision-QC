@@ -29,7 +29,7 @@ function Dashboard() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">IVQC</span>
-          <span className="brand-title">Industrial Vision · Quality Control</span>
+          <span className="brand-title">工业 AI 视觉质检与异常闭环处理系统</span>
         </div>
         <nav className="tabs">
           {TABS.map((t) => (

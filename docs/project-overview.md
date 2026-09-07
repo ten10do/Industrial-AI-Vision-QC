@@ -1,4 +1,4 @@
-# Industrial Vision AI Quality Inspection Platform: Project Overview
+# Industrial AI Visual Inspection and Exception Closed-Loop System: Project Overview
 
 This page is the first-read map for the repository. It summarizes the problem, architecture, AI evolution, industrial interfaces, and validation boundary without treating simulator evidence as a factory deployment claim.
 
