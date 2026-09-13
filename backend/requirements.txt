@@ -3,7 +3,7 @@ fastapi==0.141.1
 uvicorn[standard]==0.52.4
 sqlalchemy[asyncio]==2.0.52
 asyncpg==0.31.0
-alembic==1.19.1
+alembic==1.19.2
 httpx==0.28.1
 python-multipart==0.0.32
 pydantic==2.13.4
