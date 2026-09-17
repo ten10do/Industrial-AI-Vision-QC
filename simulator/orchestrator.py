@@ -9,6 +9,10 @@ Constraints:
 - Limited retry with exponential backoff for transient HTTP errors
   (max retry_max, no infinite retry). Idempotency keys (capture_id) prevent
   duplicate inspections when a retried request hit the backend successfully.
+- Auth (P0): the backend is fail-closed, so the orchestrator presents an
+  operator bearer token for inspection creation and a pipeline bearer token
+  (internal service identity) for telemetry. run() refuses to start without
+  both; a missing token must fail loudly, never silently drop telemetry.
 """
 
 from __future__ import annotations
@@ -105,6 +109,12 @@ class InspectionOrchestrator:
         return self._processing
 
     async def run(self, simulator: CameraSimulator, max_images: int | None = None) -> None:
+        if not self.config.api_token or not self.config.pipeline_token:
+            raise RuntimeError(
+                "the backend is fail-closed (P0): set IVQC_API_TOKEN (operator "
+                "identity) and IVQC_PIPELINE_TOKEN (pipeline identity) in "
+                "OrchestratorConfig before pushing inspections"
+            )
         if simulator.queue is not self.queue:
             raise RuntimeError(
                 "the simulator must share the orchestrator's bounded queue "
@@ -203,7 +213,12 @@ class InspectionOrchestrator:
             "idempotency_key": capture.capture_id,
         }
         try:
-            response = await self._client.post(f"{self.config.backend_url}/api/v1/inspections", files=files, data=data)
+            response = await self._client.post(
+                f"{self.config.backend_url}/api/v1/inspections",
+                files=files,
+                data=data,
+                headers={"Authorization": f"Bearer {self.config.api_token}"},
+            )
         except httpx.TimeoutException as exc:
             raise  # retryable
         except httpx.HTTPError as exc:
@@ -228,6 +243,30 @@ class InspectionOrchestrator:
             if body.get("inference_latency_ms") is not None:
                 self.metrics.inference_latencies.append(body["inference_latency_ms"])
 
+    async def _push_telemetry(self) -> None:
+        """One-shot telemetry report carrying the pipeline (internal service)
+        bearer identity. Kept separate from the loop so tests can exercise the
+        header deterministically."""
+        await self._client.post(
+            f"{self.config.backend_url}/api/v1/realtime/telemetry",
+            headers={"Authorization": f"Bearer {self.config.pipeline_token}"},
+            json={
+                "captured_total": self.metrics.captured_total,
+                "queued_current": self.metrics.queued_current,
+                "processing_current": self.metrics.processing_current,
+                "completed_total": self.metrics.completed_total,
+                "failed_total": self.metrics.failed_total,
+                "pass_total": self.metrics.pass_total,
+                "review_total": self.metrics.review_total,
+                "fail_total": self.metrics.fail_total,
+                "simulator_running": True,
+                "simulator_interval_ms": getattr(self, "_sim_interval_ms", None),
+                "worker_count": self.config.workers,
+                "queue_size": self.config.queue_size,
+                "queue_peak_depth": self.metrics.queue_peak_depth,
+            },
+        )
+
     async def _telemetry_loop(self) -> None:
         while True:
             await asyncio.sleep(self.config.telemetry_interval_seconds)
@@ -245,24 +284,7 @@ class InspectionOrchestrator:
                             self.metrics.failed_total,
                         )
             try:
-                await self._client.post(
-                    f"{self.config.backend_url}/api/v1/realtime/telemetry",
-                    json={
-                        "captured_total": self.metrics.captured_total,
-                        "queued_current": self.metrics.queued_current,
-                        "processing_current": self.metrics.processing_current,
-                        "completed_total": self.metrics.completed_total,
-                        "failed_total": self.metrics.failed_total,
-                        "pass_total": self.metrics.pass_total,
-                        "review_total": self.metrics.review_total,
-                        "fail_total": self.metrics.fail_total,
-                        "simulator_running": True,
-                        "simulator_interval_ms": getattr(self, "_sim_interval_ms", None),
-                        "worker_count": self.config.workers,
-                        "queue_size": self.config.queue_size,
-                        "queue_peak_depth": self.metrics.queue_peak_depth,
-                    },
-                )
+                await self._push_telemetry()
             except Exception:
                 logger.debug("telemetry push failed", exc_info=True)
 

@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import * as echarts from "echarts";
+import { BarChart, LineChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { init, use, type ECharts } from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
+
+use([BarChart, LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
 
 export interface ChartSeries {
   name: string;
@@ -22,11 +27,11 @@ export function Chart({
   height?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useRef<ECharts | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
-    const chart = echarts.init(ref.current);
+    const chart = init(ref.current);
     chartRef.current = chart;
     const onResize = () => chart.resize();
     window.addEventListener("resize", onResize);

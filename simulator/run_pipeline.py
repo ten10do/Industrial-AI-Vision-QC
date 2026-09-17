@@ -27,6 +27,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--station", default=None)
     p.add_argument("--batch", default=None)
     p.add_argument("--backend-url", default=None)
+    p.add_argument("--api-token", default=None, help="operator bearer token for inspection creation (env IVQC_API_TOKEN)")
+    p.add_argument("--pipeline-token", default=None, help="pipeline bearer token for telemetry (env IVQC_PIPELINE_TOKEN)")
     p.add_argument("--queue-size", type=int, default=None)
     p.add_argument("--workers", type=int, default=None)
     p.add_argument("--retry-max", type=int, default=None)
@@ -50,6 +52,10 @@ def build_configs(args: argparse.Namespace) -> tuple[SimulatorConfig, Orchestrat
         sim.batch_id = args.batch
     if args.backend_url:
         orch.backend_url = args.backend_url
+    if args.api_token:
+        orch.api_token = args.api_token
+    if args.pipeline_token:
+        orch.pipeline_token = args.pipeline_token
     if args.queue_size is not None:
         orch.queue_size = args.queue_size
     if args.workers is not None:
@@ -69,8 +75,10 @@ async def _main(args: argparse.Namespace) -> int:
     simulator = CameraSimulator(sim_cfg, orchestrator.queue)
 
     started = time.perf_counter()
+    auth_state = "on" if (orch_cfg.api_token and orch_cfg.pipeline_token) else "MISSING (run() will fail fast)"
     print(f"pipeline start | source={sim_cfg.source_directory} interval={sim_cfg.interval_ms}ms "
-          f"queue={orch_cfg.queue_size} workers={orch_cfg.workers} max_images={args.images or 'unbounded'}")
+          f"queue={orch_cfg.queue_size} workers={orch_cfg.workers} max_images={args.images or 'unbounded'} "
+          f"auth={auth_state}")
     try:
         await orchestrator.run(simulator, max_images=args.images)
     except KeyboardInterrupt:
