@@ -40,8 +40,8 @@ from ..security.auth import require_any_authenticated
 router = APIRouter(prefix="/api/v1", tags=["mlops"])
 
 
-async def _inspections_in(session: AsyncSession, *, model_version: str | None, time_from: str | None,
-                          time_to: str | None, limit: int = 2000) -> list[Inspection]:
+async def _inspections_in(session: AsyncSession, *, model_version: str | None, time_from: datetime | None,
+                          time_to: datetime | None, limit: int = 2000) -> list[Inspection]:
     from sqlalchemy.orm import selectinload
 
     stmt = (
@@ -53,15 +53,9 @@ async def _inspections_in(session: AsyncSession, *, model_version: str | None, t
     if model_version:
         stmt = stmt.where(Inspection.model_version == model_version)
     if time_from:
-        try:
-            stmt = stmt.where(Inspection.created_at >= datetime.fromisoformat(time_from))
-        except ValueError:
-            pass
+        stmt = stmt.where(Inspection.created_at >= time_from)
     if time_to:
-        try:
-            stmt = stmt.where(Inspection.created_at <= datetime.fromisoformat(time_to))
-        except ValueError:
-            pass
+        stmt = stmt.where(Inspection.created_at <= time_to)
     return list((await session.execute(stmt)).scalars().all())
 
 
@@ -78,8 +72,8 @@ def _bins(values: list[float], n: int = 10, lo: float = 0.0, hi: float = 1.0) ->
 @router.get("/model-metrics", dependencies=[Depends(require_any_authenticated())])
 async def model_metrics(
     model_version: str | None = None,
-    time_from: str | None = None,
-    time_to: str | None = None,
+    time_from: datetime | None = None,
+    time_to: datetime | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     rows = await _inspections_in(session, model_version=model_version, time_from=time_from, time_to=time_to)
@@ -122,8 +116,8 @@ async def human_feedback(
     defect_type: str | None = None,
     line: str | None = None,
     station: str | None = None,
-    time_from: str | None = None,
-    time_to: str | None = None,
+    time_from: datetime | None = None,
+    time_to: datetime | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     stmt = (
@@ -136,15 +130,9 @@ async def human_feedback(
     if model_version:
         stmt = stmt.where(Inspection.model_version == model_version)
     if time_from:
-        try:
-            stmt = stmt.where(ReviewDecision.created_at >= datetime.fromisoformat(time_from))
-        except ValueError:
-            pass
+        stmt = stmt.where(ReviewDecision.created_at >= time_from)
     if time_to:
-        try:
-            stmt = stmt.where(ReviewDecision.created_at <= datetime.fromisoformat(time_to))
-        except ValueError:
-            pass
+        stmt = stmt.where(ReviewDecision.created_at <= time_to)
     rows = (await session.execute(stmt)).all()
 
     resolved = 0

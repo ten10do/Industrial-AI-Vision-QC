@@ -1,37 +1,45 @@
 {
-  "schema_version": "steel_patchcore_d3_dependency_lock_v1",
+  "schema_version": "steel_patchcore_d3_dependency_lock_v2",
   "python": "3.11",
-  "cuda_wheel_index": "https://download.pytorch.org/whl/cu128",
+  "cuda_wheel_index": "https://download.pytorch.org/whl/cu130",
   "requirement_files": {
     "inference": {
       "uri": "inference-service/requirements.txt",
-      "sha256": "cd5655da215f0dfd0d5e85d2007b294391c1fc7ba4b4230cd9162c985c91a8b2"
+      "sha256": "a4581a6fc4d313178aece56f413201d86aec9620ddbaae43ae68d3151d0e5d9c"
     },
     "training": {
       "uri": "model-training/requirements.txt",
-      "sha256": "2a8bfeab22c014d65640129400ec81cfba34b265083e7621d007d9258dfe2740"
+      "sha256": "ee3d8a98034da370411a82312a21f0bfd9040db6cf970ea49f316df39f4c5ee0"
     },
     "backend": {
       "uri": "backend/requirements.txt",
-      "sha256": "d96ad6c3fc7780516e81a47d1b3cd8b28e23575d8e7f647b4f03f84bdb93b48c"
+      "sha256": "e0eee83a20a4b49f198947b30fc65175815aa75a312ea7e949b51cb5832d3c00"
     },
     "vision_contract": {
       "uri": "packages/vision-contract/pyproject.toml",
       "sha256": "878a64bccf5d26a079be7a03d25257c2615fa068891ceeda710c36802bf20d7c"
+    },
+    "qualified_runtime_input": {
+      "uri": "model-training/registry/steel-patchcore-d3-release/1.3.0/requirements-cu130.in",
+      "sha256": "d96a2e18a146e760ec1080cf535b1e0584822124843d64103605c3ec8cb93da9"
+    },
+    "qualified_runtime_lock": {
+      "uri": "model-training/registry/steel-patchcore-d3-release/1.3.0/requirements-cu130.lock",
+      "sha256": "1a26d0f4112471ba837df89286a1eaba2e2a331cff460cd60e8453754eec1e34"
     }
   },
   "declared_packages": {
     "inference": [
-      "torch==2.11.0+cu128",
-      "torchvision==0.26.0+cu128",
+      "torch==2.13.0+cu130",
+      "torchvision==0.28.0+cu130",
       "ultralytics==8.4.115",
       "opencv-python==4.12.0.88",
       "numpy==2.2.6",
       "pydantic==2.13.4"
     ],
     "training": [
-      "torch==2.11.0+cu128",
-      "torchvision==0.26.0+cu128",
+      "torch==2.13.0+cu130",
+      "torchvision==0.28.0+cu130",
       "ultralytics==8.4.115",
       "opencv-python==4.12.0.88",
       "numpy==2.2.6",
@@ -47,6 +55,7 @@
       "asyncpg==0.31.0",
       "alembic==1.18.5",
       "httpx==0.28.1",
+      "redis==8.1.0",
       "python-multipart==0.0.32",
       "pydantic==2.13.4",
       "pydantic-settings==2.14.2",
@@ -58,16 +67,31 @@
   "qualification_runtime": {
     "python": "3.11.9",
     "platform": "Windows-10-10.0.26100-SP0",
-    "torch": "2.11.0+cu128",
+    "torch": "2.13.0+cu130",
     "cuda_available": true,
     "packages": {
-      "torch": "2.11.0+cu128",
-      "torchvision": "0.26.0+cu128",
+      "torch": "2.13.0+cu130",
+      "torchvision": "0.28.0+cu130",
       "numpy": "2.4.6",
       "pandas": "2.3.3",
       "pydantic": "2.13.4",
-      "PyYAML": "6.0.3"
+      "PyYAML": "6.0.3",
+      "setuptools": "83.0.0"
     }
   },
-  "lock_payload_sha256": "8b6677d2d486ecf7850c3b5c3ac1969c42aa10810dd334affa2812b82e295d69"
+  "install": {
+    "requirements_uri": "model-training/registry/steel-patchcore-d3-release/1.3.0/requirements-cu130.lock",
+    "require_hashes": true,
+    "python_tag": "cp311",
+    "platform_tag": "win_amd64"
+  },
+  "security_audit": {
+    "uri": "docs/release/inference-dependency-audit.json",
+    "sha256": "c8afc95624780b01eedade7e3e9c189ec810f763c42ae5988fe255b88a08c563",
+    "cuda_local_version_normalization": {
+      "torch": "2.13.0",
+      "torchvision": "0.28.0"
+    }
+  },
+  "lock_payload_sha256": "f7d04b526ba2c14da7a9abfa47862206f72ddf8950c56c53cb14c3f5e46d9cd0"
 }

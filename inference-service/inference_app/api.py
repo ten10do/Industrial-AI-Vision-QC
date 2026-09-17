@@ -25,6 +25,8 @@ WEIGHTS = Path(os.environ.get("IVQC_WEIGHTS", WEIGHTS_DEFAULT))
 PATCHCORE_BANK_DEFAULT = Path(__file__).resolve().parents[1] / "models" / "patchcore-bottle" / "bank.npz"
 PATCHCORE_BANK = Path(os.environ.get("IVQC_PATCHCORE_BANK", str(PATCHCORE_BANK_DEFAULT)))
 D3_CANDIDATE_MANIFEST = os.environ.get("IVQC_D3_CANDIDATE_MANIFEST")
+MAX_UPLOAD_BYTES = int(os.environ.get("IVQC_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+_UPLOAD_CHUNK_BYTES = 64 * 1024
 
 # Phase 8 (8D/8E): the deployment manifest pins the whole AI stack. The
 # inference service must resolve + SHA256-validate the artifacts against it
@@ -208,7 +210,7 @@ def create_app() -> FastAPI:
         inspection_id: str | None = Form(default=None),
     ) -> VisionResult:
         rid = request.headers.get("X-Request-ID") or f"req-{uuid.uuid4().hex[:12]}"
-        data = await file.read()
+        data = await _read_upload_limited(file, MAX_UPLOAD_BYTES, rid)
         start = time.perf_counter()
         try:
             predictor = get_predictor()
@@ -318,6 +320,27 @@ def create_app() -> FastAPI:
         return result
 
     return app
+
+
+async def _read_upload_limited(file: UploadFile, max_bytes: int, request_id: str) -> bytes:
+    """Read at most max_bytes + 1 without buffering an unbounded upload."""
+    data = bytearray()
+    while True:
+        chunk = await file.read(min(_UPLOAD_CHUNK_BYTES, max_bytes + 1 - len(data)))
+        if not chunk:
+            return bytes(data)
+        data.extend(chunk)
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "error": {
+                        "code": "payload_too_large",
+                        "message": f"image exceeds {max_bytes} byte upload limit",
+                        "request_id": request_id,
+                    }
+                },
+            )
 
 
 def _to_pil(image: np.ndarray):

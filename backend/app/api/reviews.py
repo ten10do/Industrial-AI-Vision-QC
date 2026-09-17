@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..database import get_session
-from ..enums import HumanDecision
+from ..enums import HumanDecision, ReviewTaskStatus
 from ..mlops.manifest import dataset_version_for_model
 from ..models import Inspection, ReviewDecision, ReviewTask
 from ..schemas import ReviewMetricsOut, ReviewTaskOut, TrainingCandidate
@@ -98,7 +98,7 @@ class CorrectionIn(BaseModel):
 
 @router.get("/reviews", response_model=list[ReviewTaskOut], dependencies=[RequireReviewRead])
 async def list_reviews(
-    status: str | None = None,
+    status: ReviewTaskStatus | None = None,
     priority: int | None = Query(default=None, ge=1, le=1000),
     defect_type: str | None = None,
     production_line: str | None = None,

@@ -168,6 +168,12 @@ async def test_model_metrics_and_human_feedback_endpoints(client, db_session):
     assert "data drift only" in d.json()["note"]
 
 
+async def test_invalid_monitoring_dates_return_422(client):
+    for path in ("/api/v1/model-metrics", "/api/v1/human-feedback"):
+        response = await client.get(path, params={"time_from": "not-a-date"})
+        assert response.status_code == 422
+
+
 async def test_training_candidate_source_identity_fields(client, db_session, auth):
     """Semantic fix (Phase 9): dataset / model / deployment identities are
     distinct fields on the retraining candidate manifest."""

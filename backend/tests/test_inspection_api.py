@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from vision_contract import Detection, InferenceResult, utc_now_iso
 
 from app.enums import QualityResult, Severity
+from app.config import get_settings
 from app.inference.client import (
     InferenceConnectionError,
     InferenceContractError,
@@ -183,6 +184,38 @@ async def test_invalid_image_rejected_422(client, db_session, stub_infer):
     )
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "invalid_image"
+    assert await count_inspections(db_session) == 0
+
+
+@pytest.mark.parametrize("params", [
+    {"quality_result": "UNKNOWN"},
+    {"status": "not-a-status"},
+    {"date_from": "not-a-date"},
+    {"date_to": "2026-99-99"},
+])
+async def test_invalid_inspection_filters_return_422(client, params):
+    response = await client.get("/api/v1/inspections", params=params)
+    assert response.status_code == 422
+
+
+async def test_oversized_image_rejected_413_before_inference(
+    client, db_session, stub_infer, monkeypatch
+):
+    class UnexpectedInference:
+        async def infer(self, *args, **kwargs):
+            raise AssertionError("inference must not run for an oversized upload")
+
+    stub_infer(UnexpectedInference())
+    monkeypatch.setattr(get_settings(), "max_upload_bytes", len(SAMPLE_JPG))
+
+    resp = await client.post(
+        "/api/v1/inspections",
+        files={"file": ("too-large.jpg", SAMPLE_JPG + b"x", "image/jpeg")},
+        data={"product_id": "NEU-OVERSIZED"},
+    )
+
+    assert resp.status_code == 413
+    assert resp.json()["error"]["code"] == "payload_too_large"
     assert await count_inspections(db_session) == 0
 
 

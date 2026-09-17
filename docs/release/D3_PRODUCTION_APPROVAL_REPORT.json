@@ -2,12 +2,13 @@
   "schema_version": "steel_patchcore_d3_production_approval_review_v1",
   "release": "steel-patchcore-d3-release@1.3.0",
   "package_status": "RELEASE_CANDIDATE_PACKAGE",
-  "release_manifest_payload_sha256": "15202db8a0095f0a1ac62e0063af1e7ce70a4fee7837457596121dcf4ba47ae0",
-  "release_manifest_file_sha256": "64e39e16f61c3f8b4fba64e420771f207f02a8e7f7c602cf76e25e915aaf66bf",
+  "release_manifest_payload_sha256": "d10c0e24f39868f98bfafda50236844063aa5506c2cc154f258e1085094ef969",
+  "release_manifest_file_sha256": "62619dc40f5ffa8b05316c9cc248cbfce586c36adaa29a08441d6dedcaacb1e8",
   "gates": {
     "docker_clean_environment": {
-      "verdict": "PASS",
-      "report": "docs/release/docker-clean-environment-verification-final.json"
+      "verdict": "BLOCKED",
+      "report": "docs/release/docker-clean-environment-verification-final.json",
+      "blocking_deviation": "Docker evidence predates the qualified CUDA runtime lock"
     },
     "api_contract": {
       "verdict": "PASS",
@@ -27,15 +28,15 @@
       "report": "docs/release/deployment-readiness-test-report.json"
     }
   },
-  "verdict": "PASS",
+  "verdict": "BLOCKED",
   "remaining_risks": [
     "Two user-specific absolute paths remain in non-runtime dataset download utilities.",
-    "The qualified host venv contains vulnerable pip/setuptools tooling; the review container pins fixed versions and application dependencies have no known findings.",
+    "CUDA wheel local version labels are normalized only for advisory lookup; installation remains pinned to the hashed +cu130 wheels.",
     "FAT used an accelerated measured-latency replay rather than an eight-hour wall-clock production soak."
   ],
   "production_promotion": false,
   "model_modified": false,
   "artifact_modified": false,
   "threshold_modified": false,
-  "generated_at": "2026-08-21T08:48:58.707524Z"
+  "generated_at": "2026-09-01T09:57:53.740735Z"
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -10,8 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..config import get_settings
 from ..database import get_session
 from ..events import InspectionEvent
+from ..enums import InspectionStatus, QualityResult
 from ..metrics import metrics
 from ..models import Inspection
 from ..schemas import InspectionDetail
@@ -28,6 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["inspections"])
 
 _EAGER = (selectinload(Inspection.defects), selectinload(Inspection.product))
+_UPLOAD_CHUNK_BYTES = 64 * 1024
 
 
 def get_inspection_service() -> InspectionService:
@@ -48,7 +52,7 @@ async def create_inspection(
     actor: Principal = Depends(require_roles(ROLE_OPERATOR, ROLE_ADMIN)),
 ) -> InspectionDetail:
     started = time.perf_counter()
-    data = await file.read()
+    data = await _read_upload_limited(file, get_settings().max_upload_bytes)
     try:
         inspection, created = await service.create(
             session,
@@ -139,21 +143,18 @@ async def list_inspections(
     product_id: str | None = None,
     inspection_id: str | None = None,
     batch_id: str | None = None,
-    quality_result: str | None = None,
-    status: str | None = None,
+    quality_result: QualityResult | None = None,
+    status: InspectionStatus | None = None,
     defect_type: str | None = None,
     production_line: str | None = None,
     station: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> list[InspectionDetail]:
     """Search/traceability endpoint (4E). Filters are applied server-side."""
-    from datetime import datetime
-
-    from ..enums import InspectionStatus, QualityResult as QR
     from ..models import Defect, Product
 
     stmt = (
@@ -169,9 +170,9 @@ async def list_inspections(
     if batch_id:
         stmt = stmt.where(Inspection.batch_id == batch_id)
     if quality_result:
-        stmt = stmt.where(Inspection.quality_result == QR(quality_result))
+        stmt = stmt.where(Inspection.quality_result == quality_result)
     if status:
-        stmt = stmt.where(Inspection.status == InspectionStatus(status))
+        stmt = stmt.where(Inspection.status == status)
     if defect_type:
         stmt = stmt.where(Inspection.defects.any(Defect.class_name == defect_type))
     if production_line:
@@ -179,9 +180,9 @@ async def list_inspections(
     if station:
         stmt = stmt.where(Product.station == station)
     if date_from:
-        stmt = stmt.where(Inspection.created_at >= datetime.fromisoformat(date_from))
+        stmt = stmt.where(Inspection.created_at >= date_from)
     if date_to:
-        stmt = stmt.where(Inspection.created_at <= datetime.fromisoformat(date_to))
+        stmt = stmt.where(Inspection.created_at <= date_to)
     stmt = stmt.limit(limit).offset(offset)
     result = await session.execute(stmt)
     return [to_inspection_detail(i) for i in result.scalars()]
@@ -247,3 +248,18 @@ def _build_event(inspection: Inspection, *, event_type: str, error: str | None =
 
 def _err(code: str, message: str) -> dict:
     return {"error": {"code": code, "message": message, "request_id": uuid.uuid4().hex[:12]}}
+
+
+async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
+    """Read at most max_bytes + 1 without buffering an unbounded upload."""
+    data = bytearray()
+    while True:
+        chunk = await file.read(min(_UPLOAD_CHUNK_BYTES, max_bytes + 1 - len(data)))
+        if not chunk:
+            return bytes(data)
+        data.extend(chunk)
+        if len(data) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=_err("payload_too_large", f"image exceeds {max_bytes} byte upload limit"),
+            )

@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "model-training"))
 from steel_patchcore.candidate_registry import CandidateRegistryError, canonical_sha256  # noqa: E402
 from steel_patchcore.d3_release_package import (  # noqa: E402
     ReleasePackageRegistry,
+    parse_hashed_requirements_lock,
     validate_dependency_lock,
     validate_release_manifest,
     validate_release_report,
@@ -22,14 +23,47 @@ from steel_patchcore.d3_release_package import (  # noqa: E402
 RELEASE_DIR = ROOT / "model-training/registry/steel-patchcore-d3-release/1.3.0"
 MANIFEST = RELEASE_DIR / "manifest.json"
 LOCK = RELEASE_DIR / "dependency-lock.json"
+INSTALL_LOCK = RELEASE_DIR / "requirements-cu130.lock"
+DEPENDENCY_AUDIT = ROOT / "docs/release/inference-dependency-audit.json"
 
 
 def test_dependency_lock_is_canonical_and_cuda_pinned():
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     validate_dependency_lock(lock)
     assert lock["python"] == "3.11"
-    assert lock["cuda_wheel_index"].endswith("/cu128")
-    assert "torch==2.11.0+cu128" in lock["declared_packages"]["inference"]
+    assert lock["cuda_wheel_index"].endswith("/cu130")
+    assert "torch==2.13.0+cu130" in lock["declared_packages"]["inference"]
+    assert lock["install"]["require_hashes"] is True
+    assert lock["requirement_files"]["qualified_runtime_lock"]["uri"].endswith("requirements-cu130.lock")
+
+
+def test_qualified_runtime_lock_is_fully_hashed_and_matches_evidence():
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    pins = parse_hashed_requirements_lock(INSTALL_LOCK.read_text(encoding="utf-8"))
+    assert pins["torch"] == "2.13.0+cu130"
+    assert pins["torchvision"] == "0.28.0+cu130"
+    assert pins["numpy"] == lock["qualification_runtime"]["packages"]["numpy"]
+    assert pins["pandas"] == lock["qualification_runtime"]["packages"]["pandas"]
+
+
+def test_unhashed_cuda_wheel_fails_closed():
+    text = INSTALL_LOCK.read_text(encoding="utf-8")
+    tampered = text.replace(
+        "    --hash=sha256:45e97bd9bc0416f4f4190b5098c55119a389fa5a7c8bbf2639f08f1d04e0a0dc\n",
+        "",
+    )
+    with pytest.raises(CandidateRegistryError, match="RELEASE_INSTALL_LOCK_HASH_MISSING:torch"):
+        parse_hashed_requirements_lock(tampered)
+
+
+def test_cuda_wheels_are_audited_as_upstream_versions_without_skip():
+    audit = json.loads(DEPENDENCY_AUDIT.read_text(encoding="utf-8"))
+    dependencies = {row["name"]: row for row in audit["dependencies"]}
+    assert dependencies["torch"]["version"] == "2.13.0"
+    assert dependencies["torchvision"]["version"] == "0.28.0"
+    assert "skip_reason" not in dependencies["torch"]
+    assert "skip_reason" not in dependencies["torchvision"]
+    assert audit["skipped_dependencies"] == []
 
 
 def test_release_manifest_freezes_candidate_without_promotion():

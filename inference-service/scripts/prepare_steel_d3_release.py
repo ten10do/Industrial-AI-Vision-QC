@@ -34,10 +34,13 @@ from steel_patchcore.dual_candidate_registry import DualCandidateRegistry  # noq
 CANDIDATE_MANIFEST = ROOT / "model-training/registry/steel-patchcore-d3-candidate/1.3.0-candidate.1/manifest.json"
 RELEASE_DIR = ROOT / "model-training/registry/steel-patchcore-d3-release/1.3.0"
 DEPENDENCY_LOCK = RELEASE_DIR / "dependency-lock.json"
+QUALIFIED_RUNTIME_INPUT = RELEASE_DIR / "requirements-cu130.in"
+QUALIFIED_RUNTIME_LOCK = RELEASE_DIR / "requirements-cu130.lock"
 RELEASE_MANIFEST = RELEASE_DIR / "manifest.json"
 RELEASE_DOC_DIR = ROOT / "docs/release"
 ENV_REPORT = RELEASE_DOC_DIR / "clean-environment-verification.json"
 SECURITY_REPORT = RELEASE_DOC_DIR / "security-audit-report.json"
+DEPENDENCY_AUDIT_REPORT = RELEASE_DOC_DIR / "inference-dependency-audit.json"
 TEST_REPORT = RELEASE_DOC_DIR / "release-test-report.json"
 READINESS_REPORT = RELEASE_DOC_DIR / "D3_RELEASE_READINESS_REPORT.json"
 READINESS_MD = RELEASE_DOC_DIR / "D3_RELEASE_READINESS_REPORT.md"
@@ -49,6 +52,8 @@ REQUIREMENTS = {
     "training": ROOT / "model-training/requirements.txt",
     "backend": ROOT / "backend/requirements.txt",
     "vision_contract": ROOT / "packages/vision-contract/pyproject.toml",
+    "qualified_runtime_input": QUALIFIED_RUNTIME_INPUT,
+    "qualified_runtime_lock": QUALIFIED_RUNTIME_LOCK,
 }
 QUALIFICATION = {
     "dual_branch": (ROOT / "docs/dual-branch-evaluation-report.json", "PASS"),
@@ -84,7 +89,7 @@ def freeze() -> dict:
     lock = {
         "schema_version": DEPENDENCY_LOCK_SCHEMA_VERSION,
         "python": "3.11",
-        "cuda_wheel_index": "https://download.pytorch.org/whl/cu128",
+        "cuda_wheel_index": "https://download.pytorch.org/whl/cu130",
         "requirement_files": {
             name: {"uri": path.relative_to(ROOT).as_posix(), "sha256": sha256_file(path)}
             for name, path in REQUIREMENTS.items()
@@ -95,7 +100,18 @@ def freeze() -> dict:
             "platform": platform.platform(),
             "torch": torch.__version__,
             "cuda_available": torch.cuda.is_available(),
-            "packages": {name: _package_version(name) for name in ("torch", "torchvision", "numpy", "pandas", "pydantic", "PyYAML")},
+            "packages": {name: _package_version(name) for name in ("torch", "torchvision", "numpy", "pandas", "pydantic", "PyYAML", "setuptools")},
+        },
+        "install": {
+            "requirements_uri": QUALIFIED_RUNTIME_LOCK.relative_to(ROOT).as_posix(),
+            "require_hashes": True,
+            "python_tag": "cp311",
+            "platform_tag": "win_amd64",
+        },
+        "security_audit": {
+            "uri": DEPENDENCY_AUDIT_REPORT.relative_to(ROOT).as_posix(),
+            "sha256": sha256_file(DEPENDENCY_AUDIT_REPORT),
+            "cuda_local_version_normalization": {"torch": "2.13.0", "torchvision": "0.28.0"},
         },
     }
     lock["lock_payload_sha256"] = canonical_sha256(lock)

@@ -507,3 +507,11 @@ async def test_review_metrics_semantics(client, db_session, stub_infer, auth):
     assert m["override_rate"] == 0.0
     assert m["corrected_label_count"] == 0
     assert m["average_review_wait_time_s"] is not None
+
+
+@pytest.mark.asyncio
+async def test_invalid_review_status_filter_returns_422(client, auth):
+    response = await client.get(
+        "/api/v1/reviews", params={"status": "UNKNOWN"}, headers=auth("reviewer_a")
+    )
+    assert response.status_code == 422

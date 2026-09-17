@@ -1,6 +1,6 @@
 {
   "schema_version": "steel_patchcore_d3_clean_environment_verification_v1",
-  "simulation_scope": "fresh control-plane venv plus frozen CUDA inference runtime",
+  "simulation_scope": "fresh hashed CUDA 13.0 runtime on RTX 5060",
   "install": {
     "verdict": "PASS",
     "evidence": "fresh-env-install.json"
@@ -28,9 +28,6 @@
     "evidence": "release-test-report.json"
   },
   "verdict": "PASS",
-  "remaining_risks": [
-    "The full CUDA wheel stack was not downloaded into a second environment; artifact load and real inference used the frozen qualified CUDA runtime."
-  ],
   "production_promotion": false,
-  "generated_at": "2026-08-21T07:04:18.546712Z"
+  "generated_at": "2026-09-01T04:35:42.673827Z"
 }

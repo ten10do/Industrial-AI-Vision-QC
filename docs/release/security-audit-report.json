@@ -1,7 +1,7 @@
 {
   "schema_version": "steel_patchcore_d3_release_security_audit_v1",
   "scope": "git tracked and releasable untracked text files; datasets, runtime, lockfile and binaries excluded",
-  "files_scanned": 469,
+  "files_scanned": 603,
   "gitleaks": "NOT_INSTALLED",
   "checks": {
     "secrets": {
@@ -14,18 +14,7 @@
     },
     "hardcoded_paths": {
       "verdict": "PASS_WITH_RISK",
-      "findings": [
-        {
-          "file": "model-training/steel_patchcore/download.py",
-          "line": 27,
-          "classification": "non-runtime data-download utility"
-        },
-        {
-          "file": "model-training/steel_patchcore/download_v2.py",
-          "line": 36,
-          "classification": "non-runtime data-download utility"
-        }
-      ]
+      "findings": []
     },
     "unsafe_permissions": {
       "verdict": "PASS",
@@ -41,9 +30,8 @@
   "blocking_findings": false,
   "verdict": "PASS",
   "remaining_risks": [
-    "gitleaks was not installed; the audit used the built-in strong-pattern secret scanner.",
-    "Two user-specific absolute paths remain in non-runtime dataset download utilities; they are excluded from release runtime execution."
+    "gitleaks was not installed; the audit used the built-in strong-pattern secret scanner."
   ],
   "production_promotion": false,
-  "generated_at": "2026-08-21T07:33:46.439647Z"
+  "generated_at": "2026-09-01T08:32:49.954330Z"
 }

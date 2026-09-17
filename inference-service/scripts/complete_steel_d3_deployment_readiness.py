@@ -18,6 +18,7 @@ from steel_patchcore.d3_operational import atomic_write_json  # noqa: E402
 from steel_patchcore.d3_release_package import ReleasePackageRegistry  # noqa: E402
 
 RELEASE_MANIFEST = ROOT / "model-training/registry/steel-patchcore-d3-release/1.3.0/manifest.json"
+DEPENDENCY_LOCK = ROOT / "model-training/registry/steel-patchcore-d3-release/1.3.0/dependency-lock.json"
 DOCKER_REPORT = ROOT / "docs/release/docker-clean-environment-verification-final.json"
 SECURITY_REPORT = ROOT / "docs/release/final-security-review.json"
 TEST_REPORT = ROOT / "docs/release/deployment-readiness-test-report.json"
@@ -25,7 +26,8 @@ APPROVAL_JSON = ROOT / "docs/release/D3_PRODUCTION_APPROVAL_REPORT.json"
 APPROVAL_MD = ROOT / "docs/release/D3_PRODUCTION_APPROVAL_REPORT.md"
 RUNTIME_ROOT = ROOT / "model-training/runs/steel-d3-deployment-readiness"
 BACKEND_AUDIT = RUNTIME_ROOT / "pip-audit-backend-fixed.json"
-INFERENCE_AUDIT = RUNTIME_ROOT / "pip-audit-inference.json"
+INFERENCE_AUDIT = ROOT / "docs/release/inference-dependency-audit.json"
+DEPENDENCY_AUDIT_SCRIPT = ROOT / "inference-service/scripts/audit_steel_d3_dependencies.py"
 
 
 def utc_now() -> str:
@@ -34,11 +36,19 @@ def utc_now() -> str:
 
 def _vulnerabilities(path: Path) -> list[dict]:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return [
-        {"package": row["name"], "version": row.get("version"), **finding}
-        for row in payload["dependencies"]
-        for finding in row.get("vulns", [])
-    ]
+    findings = {}
+    for row in payload["dependencies"]:
+        for finding in row.get("vulns", []):
+            key = (row["name"], row.get("version"), finding["id"])
+            findings.setdefault(key, {"package": row["name"], "version": row.get("version"), **finding})
+    return list(findings.values())
+
+
+def dependency_audit() -> dict:
+    result = subprocess.run([sys.executable, str(DEPENDENCY_AUDIT_SCRIPT)], cwd=ROOT, check=False)
+    if result.returncode not in {0, 1}:
+        raise RuntimeError(f"dependency audit failed with exit code {result.returncode}")
+    return json.loads(INFERENCE_AUDIT.read_text(encoding="utf-8"))
 
 
 def docker_evidence(container_name: str = "d3-release-review") -> dict:
@@ -99,13 +109,15 @@ def security_review() -> dict:
     prior = json.loads((ROOT / "docs/release/security-audit-report.json").read_text(encoding="utf-8"))
     backend_vulnerabilities = _vulnerabilities(BACKEND_AUDIT)
     inference_vulnerabilities = _vulnerabilities(INFERENCE_AUDIT)
-    runtime_findings = [row for row in inference_vulnerabilities if row["package"] not in {"pip", "setuptools"}]
+    inference_audit = json.loads(INFERENCE_AUDIT.read_text(encoding="utf-8"))
+    skipped_dependencies = inference_audit.get("skipped_dependencies", [])
     dockerfile = (ROOT / "inference-service/Dockerfile.d3-release-review").read_text(encoding="utf-8")
     toolchain_patched = "pip==26.1.2 setuptools==83.0.0" in dockerfile
     staged_modes = subprocess.check_output(["git", "ls-files", "--stage"], cwd=ROOT, text=True).splitlines()
     unsafe_modes = [line for line in staged_modes if not line.startswith(("100644 ", "100755 "))]
     blocking = bool(
-        prior["blocking_findings"] or backend_vulnerabilities or runtime_findings or not toolchain_patched or unsafe_modes
+        prior["blocking_findings"] or backend_vulnerabilities or inference_vulnerabilities
+        or skipped_dependencies or not toolchain_patched or unsafe_modes
     )
     report = {
         "schema_version": "steel_patchcore_d3_final_security_review_v1",
@@ -113,11 +125,11 @@ def security_review() -> dict:
             "secrets": prior["checks"]["secrets"],
             "absolute_paths": prior["checks"]["hardcoded_paths"],
             "dependency_vulnerabilities": {
-                "verdict": "PASS" if not backend_vulnerabilities and not runtime_findings and toolchain_patched else "BLOCKED",
+                "verdict": "PASS" if not backend_vulnerabilities and not inference_vulnerabilities and not skipped_dependencies and toolchain_patched else "BLOCKED",
                 "backend_clean_environment_count": len(backend_vulnerabilities),
                 "qualified_host_runtime_count": len(inference_vulnerabilities),
-                "qualified_host_runtime_application_count": len(runtime_findings),
-                "qualified_host_runtime_tooling_packages": sorted({row["package"] for row in inference_vulnerabilities}),
+                "qualified_host_runtime_skipped_count": len(skipped_dependencies),
+                "cuda_packages_audited_as_upstream_versions": ["torch==2.13.0", "torchvision==0.28.0"],
                 "container_toolchain_fix": {"pip": "26.1.2", "setuptools": "83.0.0", "pinned": toolchain_patched},
             },
             "permissions": {
@@ -129,7 +141,7 @@ def security_review() -> dict:
         "verdict": "BLOCKED" if blocking else "PASS",
         "remaining_risks": [
             "Two user-specific absolute paths remain in non-runtime dataset download utilities.",
-            "The qualified host venv contains vulnerable pip/setuptools tooling; the review container pins fixed versions and application dependencies have no known findings.",
+            "CUDA wheel local version labels are normalized only for advisory lookup; installation remains pinned to the hashed +cu130 wheels.",
         ],
         "production_promotion": False,
         "generated_at": utc_now(),
@@ -140,6 +152,7 @@ def security_review() -> dict:
 
 def finalize() -> dict:
     package = ReleasePackageRegistry(ROOT).load(RELEASE_MANIFEST)
+    dependency_lock = json.loads(DEPENDENCY_LOCK.read_text(encoding="utf-8"))
     docker = json.loads(DOCKER_REPORT.read_text(encoding="utf-8"))
     security = json.loads(SECURITY_REPORT.read_text(encoding="utf-8"))
     tests = json.loads(TEST_REPORT.read_text(encoding="utf-8"))
@@ -151,8 +164,17 @@ def finalize() -> dict:
         'error_category="artifact_load_failure"',
         'error_category="runtime_exception"',
     ))
+    dockerfile = (ROOT / "inference-service/Dockerfile.d3-release-review").read_text(encoding="utf-8")
+    docker_evidence_current = (
+        f"@{docker['docker_build']['base_digest']}" in dockerfile.splitlines()[0]
+        and docker["runtime_fingerprint"]["torch"] == dependency_lock["qualification_runtime"]["torch"]
+    )
     gates = {
-        "docker_clean_environment": {"verdict": docker["verdict"], "report": DOCKER_REPORT.relative_to(ROOT).as_posix()},
+        "docker_clean_environment": {
+            "verdict": docker["verdict"] if docker_evidence_current else "BLOCKED",
+            "report": DOCKER_REPORT.relative_to(ROOT).as_posix(),
+            "blocking_deviation": None if docker_evidence_current else "Docker evidence predates the qualified CUDA runtime lock",
+        },
         "api_contract": {
             "verdict": "PASS" if fail_closed else "BLOCKED",
             "report": "docs/release/api-contract.md",
@@ -195,10 +217,12 @@ def finalize() -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", choices=("docker", "security", "finalize", "all"), default="all")
+    parser.add_argument("--stage", choices=("docker", "audit", "security", "finalize", "all"), default="all")
     args = parser.parse_args()
     if args.stage in {"docker", "all"}:
         docker_evidence()
+    if args.stage in {"audit", "all"}:
+        dependency_audit()
     if args.stage in {"security", "all"}:
         security_review()
     if args.stage in {"finalize", "all"}:
