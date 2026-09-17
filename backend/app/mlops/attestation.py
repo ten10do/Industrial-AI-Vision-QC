@@ -172,6 +172,32 @@ def sign_attestation(secret: str, payload: dict, timestamp: int | None = None) -
     return hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest(), ts
 
 
+# ---- evaluation evidence attestation ----
+#
+# Evaluation reports are much larger than the metric/domain attestation above,
+# so the signature covers the report's digest rather than the report body: the
+# pipeline signs the identity of the evidence, and the server recomputes the
+# digest from the bytes it actually received. A report that was edited in
+# flight changes its digest and stops matching the signature.
+
+EVALUATION_ATTESTATION_SCHEMA = "ivqc_evaluation_attestation_v1"
+
+
+def evaluation_attestation_payload(
+    *,
+    model_name: str,
+    model_version: str,
+    report_sha256: str,
+) -> dict:
+    """The exact object the pipeline signs when submitting evaluation evidence."""
+    return {
+        "schema_version": EVALUATION_ATTESTATION_SCHEMA,
+        "model_name": model_name,
+        "model_version": model_version,
+        "report_sha256": report_sha256,
+    }
+
+
 def verify_attestation_signature(
     secret: str,
     payload: dict,

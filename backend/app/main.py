@@ -48,6 +48,9 @@ def create_app() -> FastAPI:
     from .api import models_registry
 
     app.include_router(models_registry.router)
+    from .api import evaluations
+
+    app.include_router(evaluations.router)
     from .api import mlops_monitoring
 
     app.include_router(mlops_monitoring.router)

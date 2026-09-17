@@ -347,6 +347,66 @@ Index("ix_model_registry_audit_registry", ModelRegistryAudit.__table__.c.registr
 Index("ix_model_registry_audit_created", ModelRegistryAudit.__table__.c.created_at)
 
 
+class ModelEvaluation(TimestampMixin, Base):
+    """Stored evaluation evidence for one model version (Error Analysis Pipeline).
+
+    One row is one offline evaluation of one model version on one dataset
+    split. It is the evidence the quality gate reads, so it is written only
+    through the signed trusted-pipeline path and is append-only: a re-run
+    appends a new row rather than editing the old one, which is what makes
+    "the gate passed, and here is what it read" checkable after the fact.
+
+    The scalar columns are a denormalised index of the report so that a list
+    endpoint or a dashboard cell never has to parse the JSON payload; the
+    payload itself (``report``) is the source of truth and is re-hashed by the
+    server on submission.
+    """
+
+    __tablename__ = "model_evaluations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    registry_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("model_registry.id"), nullable=True)
+
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    task: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    dataset_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    dataset_split: Mapped[str] = mapped_column(String(64), nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    precision: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recall: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    false_accept_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    false_reject_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p95_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    true_positive: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    true_negative: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    false_positive: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    false_negative: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # The full structured report and the SHA256 of its canonical form. The
+    # fingerprint is recomputed server-side on submission: a caller cannot
+    # store a report and quote a different digest for it.
+    report: Mapped[dict] = mapped_column(JSON, nullable=False)
+    report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    report_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    attested_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attestation_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evaluation_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+Index("ix_model_evaluations_version", ModelEvaluation.__table__.c.model_name,
+      ModelEvaluation.__table__.c.model_version)
+Index("ix_model_evaluations_created", ModelEvaluation.__table__.c.created_at)
+Index("ix_model_evaluations_registry", ModelEvaluation.__table__.c.registry_id)
+
+
 class DatasetVersion(TimestampMixin, Base):
     """Dataset versioning: manifest + SHA256 (8K). A model must be able to
     trace back to an exact dataset version."""

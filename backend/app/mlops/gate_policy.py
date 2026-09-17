@@ -28,6 +28,10 @@ class MetricRule:
     direction: str  # "min" (higher is better) | "max" (lower is better)
     value: float
     bound: float
+    # Where the number came from. The promotion policy leaves it unset; the
+    # evaluation quality gate requires it, because a threshold nobody can
+    # trace is a threshold nobody can defend in an audit.
+    source: str | None = None
 
     def compare(self, got: float) -> bool:
         return got >= self.value if self.direction == "min" else got <= self.value
@@ -42,6 +46,42 @@ class ModelTypePolicy:
 
     def thresholds(self) -> dict[str, float]:
         return {r.name: r.value for r in self.rules}
+
+
+def resolve_rules(
+    rules: tuple[MetricRule, ...], overrides: dict | None
+) -> tuple[dict[str, float], list[str]]:
+    """Return (effective thresholds, violations) for a rule set.
+
+    An override may only tighten a threshold. Anything else, including an
+    unknown metric name, is a violation and blocks the promotion. Shared by
+    the promotion policy and the evaluation quality gate so that the two can
+    never drift into different meanings of "tighter".
+    """
+    effective = {r.name: r.value for r in rules}
+    violations: list[str] = []
+    for key, raw in (overrides or {}).items():
+        rule = next((r for r in rules if r.name == key), None)
+        if rule is None:
+            violations.append(f"unknown_threshold:{key}")
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            violations.append(f"non_numeric_threshold:{key}")
+            continue
+        if value != value or value in (float("inf"), float("-inf")):
+            violations.append(f"non_finite_threshold:{key}")
+            continue
+        if not rule.is_tightening(value):
+            violations.append(
+                f"threshold_relaxation_forbidden:{key}:{value}<{rule.value}"
+                if rule.direction == "min"
+                else f"threshold_relaxation_forbidden:{key}:{value}>{rule.value}"
+            )
+            continue
+        effective[key] = value
+    return effective, violations
 
 
 @dataclass(frozen=True)
@@ -62,31 +102,7 @@ class PromotionPolicy:
         An override may only tighten a threshold. Anything else, including an
         unknown metric name, is a violation and blocks the promotion.
         """
-        rules = self.rules_for(model_type)
-        effective = {r.name: r.value for r in rules}
-        violations: list[str] = []
-        for key, raw in (overrides or {}).items():
-            rule = next((r for r in rules if r.name == key), None)
-            if rule is None:
-                violations.append(f"unknown_threshold:{key}")
-                continue
-            try:
-                value = float(raw)
-            except (TypeError, ValueError):
-                violations.append(f"non_numeric_threshold:{key}")
-                continue
-            if value != value or value in (float("inf"), float("-inf")):
-                violations.append(f"non_finite_threshold:{key}")
-                continue
-            if not rule.is_tightening(value):
-                violations.append(
-                    f"threshold_relaxation_forbidden:{key}:{value}<{rule.value}"
-                    if rule.direction == "min"
-                    else f"threshold_relaxation_forbidden:{key}:{value}>{rule.value}"
-                )
-                continue
-            effective[key] = value
-        return effective, violations
+        return resolve_rules(self.rules_for(model_type), overrides)
 
     def to_dict(self, model_type: str, effective: dict[str, float]) -> dict:
         return {

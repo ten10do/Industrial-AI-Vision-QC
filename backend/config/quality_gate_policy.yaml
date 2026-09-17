@@ -1,0 +1,121 @@
+# Model Quality Gate policy (server-owned, hash-pinned, fail-closed).
+#
+# This file is the ONLY source of the evaluation-evidence acceptance rules.
+# No API caller can relax them: unlike the promotion policy there is not even
+# a tighten-only override, because the evidence this gate reads is produced by
+# the trusted pipeline and a caller has no legitimate reason to re-judge it.
+#
+# Set IVQC_QUALITY_GATE_POLICY_SHA256 to the SHA256 of this file. With the pin
+# empty the gate still runs but every verdict reports policy_pinned=false and
+# an unpinned policy is treated as a failure, not a warning.
+#
+# PROVENANCE OF EVERY NUMBER BELOW
+# --------------------------------
+# `source` is mandatory on every rule. It records where the number came from,
+# and the loader refuses a file whose rules do not carry one. A threshold
+# nobody can trace is a threshold nobody can defend in an audit.
+#
+#   * recall 0.60 and false_reject_rate 0.10 are the repository's own frozen
+#     development gate (model-training/steel_patchcore/aggregation.py,
+#     DEVELOPMENT_GATE: anomaly_recall_min / normal_fpr_max).
+#   * false_accept_rate 0.40 is that same recall floor expressed in the
+#     accept/reject vocabulary: false_accept_rate == 1 - recall.
+#   * latency_p95_ms mirrors the latency ceiling already declared in
+#     backend/config/promotion_policy.yaml.
+#   * sample_count 100 has NO prior definition in this repository. It is
+#     marked as a development placeholder and must be replaced with a number
+#     derived from a real sampling plan before status is raised to
+#     "production". The loader refuses `status: production` while any rule
+#     still cites a demo value.
+
+schema_version: "ivqc_quality_gate_policy_v1"
+policy_id: "steel-quality-gate-development-2026.09"
+status: "development"
+
+notes:
+  - "Development policy. No measured factory cost function exists in this repository, so these numbers constrain a candidate, they do not certify a production line."
+  - "Enforcement scope is declared here rather than at runtime. An exemption is a policy edit under review, never a flag toggled during an incident."
+
+enforcement:
+  # Model families the evaluation gate is actually applied to.
+  #
+  # EMPTY ON PURPOSE. The models currently registered in this repository are
+  # Phase-6/Phase-8 benchmark baselines that never had a prediction-level
+  # evaluation recorded; demanding one retroactively would be a fabricated
+  # gate, not a strict one. Populate this list (e.g. [patchcore, yolo]) as
+  # soon as the first candidate has a stored evaluation report, and the gate
+  # starts holding candidates that cannot prove themselves.
+  #
+  # While a model family is absent from this list the gate returns
+  # NOT_ENFORCED, and that verdict, together with this policy's identity and
+  # digest, is written to the governance journal. The exemption is visible.
+  enforced_model_types: []
+  require_evaluation_evidence: true
+
+evidence_requirements:
+  # Structural minimum for a report to be usable as evidence at all.
+  require_confusion_matrix: true
+  require_failure_cases: true
+  require_threshold_recorded: true
+  require_sample_count: true
+  require_score_distributions: false
+
+freshness:
+  # null disables the age check. It stays null until there is a policy that
+  # says how stale an evaluation may be before it must be re-run.
+  max_evidence_age_days: null
+
+metrics:
+  patchcore:
+    recall:
+      direction: min
+      value: 0.60
+      bound: 0.50
+      source: "model-training/steel_patchcore/aggregation.py DEVELOPMENT_GATE.anomaly_recall_min"
+    false_accept_rate:
+      direction: max
+      value: 0.40
+      bound: 0.60
+      source: "dual of the 0.60 recall floor: false_accept_rate == 1 - recall (acceptance sampling, consumer's risk)"
+    false_reject_rate:
+      direction: max
+      value: 0.10
+      bound: 0.30
+      source: "model-training/steel_patchcore/aggregation.py DEVELOPMENT_GATE.normal_fpr_max"
+    latency_p95_ms:
+      direction: max
+      value: 2000.0
+      bound: 8000.0
+      source: "backend/config/promotion_policy.yaml thresholds.patchcore.latency_ms"
+    sample_count:
+      direction: min
+      value: 100
+      bound: 30
+      source: "DEMO/DEVELOPMENT placeholder: no sampling plan exists in this repository yet; replace before status=production"
+
+  yolo:
+    recall:
+      direction: min
+      value: 0.60
+      bound: 0.50
+      source: "backend/config/promotion_policy.yaml thresholds.yolo.recall"
+    false_accept_rate:
+      direction: max
+      value: 0.40
+      bound: 0.60
+      source: "dual of the 0.60 recall floor: false_accept_rate == 1 - recall (acceptance sampling, consumer's risk)"
+    false_reject_rate:
+      direction: max
+      value: 0.10
+      bound: 0.30
+      source: "DEMO/DEVELOPMENT placeholder mirroring the frozen PatchCore normal_fpr_max; no YOLO false-reject study exists yet"
+    latency_p95_ms:
+      direction: max
+      value: 120.0
+      bound: 400.0
+      source: "backend/config/promotion_policy.yaml thresholds.yolo.latency_p95_ms"
+    sample_count:
+      direction: min
+      value: 100
+      bound: 30
+      source: "DEMO/DEVELOPMENT placeholder: no sampling plan exists in this repository yet; replace before status=production"

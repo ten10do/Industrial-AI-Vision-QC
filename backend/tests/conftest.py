@@ -134,9 +134,10 @@ def artifact():
 
 
 @pytest.fixture
-def eval_report(tmp_path):
+def eval_report():
     """An eval report the domain-validation claim can point at. Lives under
-    the project root so the server can resolve and re-hash it."""
+    the project root so the server can resolve and re-hash it relative to that
+    root, which is why a tmp_path file would not do."""
     import hashlib
     import json as _json
 
@@ -149,7 +150,15 @@ def eval_report(tmp_path):
     try:
         yield {"uri": rel, "sha256": digest}
     finally:
-        file.unlink(missing_ok=True)
+        # Cleanup must never turn a passing test into an ERROR. Some sandboxed
+        # environments intercept unlink() and fail the trash operation with
+        # OSError (observed: SHFileOperationW 0x2 on Windows). The file is
+        # disposable and backend/.artifacts/ is gitignored, so a leak here is
+        # contained and strictly preferable to masking a real test result.
+        try:
+            file.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @pytest.fixture

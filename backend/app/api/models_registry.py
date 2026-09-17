@@ -49,6 +49,7 @@ from ..security.auth import (
     request_id as _request_id,
     require_roles,
 )
+from ..services.evaluation_service import get_evaluation_service
 from ..services.registry_service import (
     APPROVAL_ERROR_CODES,
     RegistryError,
@@ -350,11 +351,25 @@ async def gate(
     body: PromoteIn,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    """Dry run. Reports both gates and writes nothing.
+
+    ``promotion_gate`` reads the attested aggregate metrics;
+    ``quality_gate`` reads the stored evaluation evidence. A promotion needs
+    both, so a dry run that showed only one of them would be misleading.
+    """
     m = await get_registry_service().get(session, entry_id)
     if m is None:
         raise HTTPException(status_code=404, detail=_err("not_found", "model not found"))
     g = _evaluate_for(m, body)
-    return {"model": f"{m.model_name}@{m.model_version}", "gate": g.to_dict()}
+    qg = await get_evaluation_service().quality_gate_for(session, m, record_audit=False)
+    return {
+        "model": f"{m.model_name}@{m.model_version}",
+        "gate": g.to_dict(),
+        "quality_gate": qg.to_dict(),
+        # Backward compatibility: `passed` keeps meaning "the promotion gate
+        # passed". The combined answer is `promotion_allowed`.
+        "promotion_allowed": bool(g.passed and qg.allows_promotion),
+    }
 
 
 @router.post("/{entry_id}/promote")
@@ -370,16 +385,20 @@ async def promote(
     if m is None:
         raise HTTPException(status_code=404, detail=_err("not_found", "model not found"))
     g = _evaluate_for(m, body)
+    entry_quality_gate = await get_evaluation_service().quality_gate_for(
+        session, m, actor=actor, request_id=_request_id(request)
+    )
     try:
         m = await svc.promote(
             session, m, gate=g, required_domain=body.required_domain, actor=actor,
             approved_by=body.approved_by, reason=body.reason, request_id=_request_id(request),
+            quality_gate=entry_quality_gate,
         )
         await session.commit()
     except RegistryError as exc:
         await session.commit()  # persist the DENIED audit row written by the service
         _raise_registry_error(exc)
-    return {**_out(m), "gate": g.to_dict()}
+    return {**_out(m), "gate": g.to_dict(), "quality_gate": entry_quality_gate.to_dict()}
 
 
 @router.post("/{entry_id}/archive")

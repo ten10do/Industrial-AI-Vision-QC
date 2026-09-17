@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,9 @@ from ..mlops.gate_policy import get_policy
 from ..mlops.promotion_gate import GateResult, default_provenance
 from ..models import ModelRegistry, ModelRegistryAudit
 from ..security.auth import ROLE_ADMIN, ROLE_APPROVER, ROLE_PIPELINE, Principal
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from ..mlops.quality_gate import QualityGateResult
 
 logger = logging.getLogger(__name__)
 
@@ -331,10 +335,51 @@ class RegistryService:
         approved_by: str | None = None,
         reason: str | None = None,
         request_id: str | None = None,
+        quality_gate: "QualityGateResult | None" = None,
     ) -> ModelRegistry:
-        """Promote to PRODUCTION. Requires a passing server-evaluated gate and
-        a human approver who is not the caller."""
+        """Promote to PRODUCTION.
+
+        Three independent conditions must hold, and none of them can be waived
+        by the caller:
+
+        1. the server-evaluated promotion gate passes (attested metrics,
+           verified artifact hash, verified domain evidence);
+        2. the evaluation quality gate does not HOLD (see
+           ``app.mlops.quality_gate``). It is computed here when the caller
+           does not supply one, so there is no code path that reaches
+           PRODUCTION without it;
+        3. a human approver, who is not the caller, signs off with a reason.
+
+        A HOLD from the quality gate is a hard safety gate. Human approval
+        cannot bypass it: the approval is validated *after* the gate, and a
+        held gate raises before any approval is honoured.
+        """
         _validate_approval(actor, approved_by, reason, "promote")
+
+        if quality_gate is None:
+            from .evaluation_service import get_evaluation_service
+
+            quality_gate = await get_evaluation_service().quality_gate_for(
+                session, entry, actor=actor, request_id=request_id
+            )
+
+        if quality_gate.held:
+            await self.audit(
+                session, action="promote", outcome="DENIED", entry=entry, actor=actor,
+                approved_by=approved_by, reason=reason, gate=gate,
+                payload={
+                    "required_domain": required_domain,
+                    "block": "quality_gate_hold",
+                    "quality_gate": quality_gate.to_dict(),
+                },
+                request_id=request_id,
+            )
+            raise RegistryError(
+                "quality_gate_held",
+                "quality gate HOLD: " + "; ".join(
+                    f"{rule['rule']} ({rule['message']})" for rule in quality_gate.failed_rules
+                ) or "quality gate HOLD",
+            )
 
         if not gate.passed:
             await self.audit(
@@ -374,7 +419,12 @@ class RegistryService:
             session, action="promote", outcome="APPLIED", entry=entry, actor=actor,
             approved_by=approved_by, reason=reason, gate=gate,
             from_status=previous, to_status="PRODUCTION",
-            payload={"required_domain": required_domain}, request_id=request_id,
+            payload={
+                "required_domain": required_domain,
+                "quality_gate": quality_gate.to_dict(),
+                "quality_gate_verdict": quality_gate.verdict,
+            },
+            request_id=request_id,
         )
         return entry
 
