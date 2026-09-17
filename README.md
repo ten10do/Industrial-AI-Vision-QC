@@ -221,7 +221,7 @@ Set-Location frontend
 npm test
 ```
 
-For a service demo, start PostgreSQL with `docker compose up -d postgres`, then follow the environment-specific steps in [the deployment guide](docs/operations/deployment-guide.md). GPU inference remains a local gate because frozen artifacts and qualified hardware are not committed to Git.
+For a service demo, start PostgreSQL and Redis with `docker compose up -d postgres redis`, then follow the environment-specific steps in [the deployment guide](docs/operations/deployment-guide.md). Redis provides cross-worker metrics, WebSocket fan-out, and Copilot session persistence; staging/production refuses to start without `IVQC_REDIS_URL`. GPU inference remains a local gate because frozen artifacts and qualified hardware are not committed to Git.
 
 ## Scope and Limitations
 

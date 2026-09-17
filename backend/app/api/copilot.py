@@ -39,7 +39,7 @@ async def copilot_query(
 
 @router.get("/conversations/{conversation_id}", dependencies=[Depends(require_any_authenticated())])
 async def copilot_conversation(conversation_id: str) -> dict:
-    conv = conversation_store.get(conversation_id)
+    conv = await conversation_store.get(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "conversation not found"}})
     return conv.to_dict()

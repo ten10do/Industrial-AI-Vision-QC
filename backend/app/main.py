@@ -11,14 +11,36 @@ from sqlalchemy import text
 from .api import inspections, products, quality_rules, realtime, reviews
 from .config import get_settings
 from .database import engine
+from .inference.client import InferenceClient
+from .metrics import metrics
+from .shared_state import close_shared_state, open_shared_state
+from .ws import manager
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
-    await engine.dispose()
+    shared = None
+    try:
+        shared = await open_shared_state()
+        app.state.shared_state = shared
+        prefix = get_settings().shared_state_prefix
+        await metrics.configure(shared, prefix)
+        from .copilot.conversation import conversation_store
+
+        await conversation_store.configure(shared, prefix)
+        await manager.start(shared, prefix)
+        yield
+    finally:
+        await manager.shutdown()
+        await InferenceClient.close_all()
+        await metrics.configure(None)
+        from .copilot.conversation import conversation_store
+
+        await conversation_store.configure(None)
+        await close_shared_state()
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -34,7 +56,11 @@ def create_app() -> FastAPI:
         try:
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
-            return {"status": "ready", "database": "ok"}
+            return {
+                "status": "ready",
+                "database": "ok",
+                "shared_state": "redis" if getattr(app.state, "shared_state", None) is not None else "memory",
+            }
         except Exception:
             logger.exception("ready check failed")
             return JSONResponse(status_code=503, content={"status": "not_ready", "database": "unreachable"})

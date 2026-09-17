@@ -2,7 +2,7 @@
 
 Marked ``integration``. Requires:
 - the inference service running (default http://127.0.0.1:8100)
-- PostgreSQL reachable (default postgresql+asyncpg://vision_qc:vision_qc@127.0.0.1:5432/vision_qc)
+- PostgreSQL reachable (default postgresql+asyncpg://vision_qc:vision_qc@127.0.0.1:5433/vision_qc)
 
 Running Alembic against an empty schema is part of this test, which doubles as
 the Phase 2 gate check "migration from empty DB builds all tables".

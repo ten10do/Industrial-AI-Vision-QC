@@ -52,8 +52,10 @@ class CopilotService:
 
     async def query(self, session: AsyncSession, *, conversation_id: str | None, message: str) -> dict:
         settings = get_settings()
-        conv = conversation_store.get_or_create(conversation_id)
-        conv.add(Turn(role="user", content=message))
+        conv = await conversation_store.get_or_create(conversation_id)
+        await conversation_store.append(conv.id, Turn(role="user", content=message))
+        conv = await conversation_store.get(conv.id)
+        assert conv is not None
 
         started = time.perf_counter()
         provider = self._provider()
@@ -127,7 +129,8 @@ class CopilotService:
         limitations.extend(grounding_notes)
 
         total_latency_ms = round((time.perf_counter() - started) * 1000.0, 2)
-        conv.add(
+        await conversation_store.append(
+            conv.id,
             Turn(
                 role="assistant",
                 content=final_message,

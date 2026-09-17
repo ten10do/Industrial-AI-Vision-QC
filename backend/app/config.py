@@ -13,10 +13,17 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+asyncpg://vision_qc:vision_qc@127.0.0.1:5432/industrialvision_dev"
+    database_url: str = "postgresql+asyncpg://vision_qc:vision_qc@127.0.0.1:5433/vision_qc"
     inference_service_url: str = "http://127.0.0.1:8100"
     inference_timeout_seconds: float = 30.0
     max_upload_bytes: int = 10 * 1024 * 1024
+
+    # Cross-worker realtime metrics, WebSocket event bus and Copilot sessions.
+    # Development may leave this empty for an in-process fallback. Production
+    # and staging fail startup without it, because the fallback is not safe for
+    # multiple workers or replicas.
+    redis_url: str = ""
+    shared_state_prefix: str = "ivqc"
 
     storage_dir: str = "storage-images"
     default_rule_version: int = 1

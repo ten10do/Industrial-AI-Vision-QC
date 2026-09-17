@@ -278,8 +278,7 @@ async def test_result_contains_explicit_time_window(db):
 
 @pytest.mark.asyncio
 async def test_conversation_context_resolves_followup(db):
-    store_before = conversation_store._store.copy()
-    conversation_store.reset()
+    await conversation_store.reset()
     try:
         llm1 = FakeLlmProvider(script=[{"tool_calls": [{"name": "compare_production_lines", "arguments": {}}]}, {"message": "Line A 当前良率正常。"}])
         out1 = await _query(db, "今天 Line A 怎么样？", llm=llm1)
@@ -287,18 +286,17 @@ async def test_conversation_context_resolves_followup(db):
         llm2 = FakeLlmProvider(script=[{"tool_calls": [{"name": "get_quality_summary", "arguments": {"line": "line-a"}}]}, {"message": "Line A 的 Station 03 相关分析如下。"}])
         out2 = await _query(db, "那 Station 03 呢？", llm=llm2, conversation_id=cid)
         assert out2["conversation_id"] == cid
-        conv = conversation_store.get(cid)
+        conv = await conversation_store.get(cid)
         assert conv is not None and len(conv.turns) == 4  # user/assistant/user/assistant
     finally:
-        conversation_store._store.clear()
-        conversation_store._store.update(store_before)
+        await conversation_store.reset()
 
 
 # ---- API surface (9N) ----
 
 @pytest.mark.asyncio
 async def test_copilot_api_query_and_conversation(client, db_session):
-    conversation_store.reset()
+    await conversation_store.reset()
     try:
         resp = await client.post(
             "/api/v1/copilot/query",
@@ -317,7 +315,7 @@ async def test_copilot_api_query_and_conversation(client, db_session):
         assert conv_resp.status_code == 200
         assert conv_resp.json()["id"] == cid
     finally:
-        conversation_store.reset()
+        await conversation_store.reset()
 
 
 @pytest.mark.asyncio

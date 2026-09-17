@@ -23,7 +23,7 @@ RequireTelemetryWrite = Depends(require_roles(ROLE_PIPELINE, ROLE_ADMIN))
 @rt_router.get("/status", dependencies=[Depends(require_any_authenticated())])
 async def realtime_status() -> dict:
     data = await metrics.snapshot()
-    data["ws_client_count"] = manager.client_count
+    data["ws_client_count"] = await manager.total_client_count()
     return data
 
 
@@ -78,6 +78,6 @@ async def ws_inspections(websocket: WebSocket) -> None:
             # Receiving lets us detect disconnect promptly; payload ignored.
             await websocket.receive_text()
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        await manager.disconnect(websocket)
     except Exception:
-        manager.disconnect(websocket)
+        await manager.disconnect(websocket)

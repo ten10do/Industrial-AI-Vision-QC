@@ -5,6 +5,7 @@ sqlalchemy[asyncio]==2.0.51
 asyncpg==0.31.0
 alembic==1.18.5
 httpx==0.28.1
+redis==8.1.0
 python-multipart==0.0.32
 pydantic==2.13.4
 pydantic-settings==2.14.2
