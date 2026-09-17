@@ -20,6 +20,12 @@ class SimulatorConfig:
 @dataclass
 class OrchestratorConfig:
     backend_url: str = os.environ.get("IVQC_BACKEND_URL", "http://127.0.0.1:8123")
+    # Bearer credentials for the fail-closed backend (P0 security). Two
+    # distinct identities are required because a single bearer token carries
+    # one role set: an operator token for inspection creation and a pipeline
+    # token (internal service identity) for telemetry ingestion.
+    api_token: str = os.environ.get("IVQC_API_TOKEN", "")
+    pipeline_token: str = os.environ.get("IVQC_PIPELINE_TOKEN", "")
     queue_size: int = int(os.environ.get("IVQC_QUEUE_SIZE", "20"))
     workers: int = int(os.environ.get("IVQC_WORKERS", "2"))
     retry_max: int = int(os.environ.get("IVQC_RETRY_MAX", "2"))

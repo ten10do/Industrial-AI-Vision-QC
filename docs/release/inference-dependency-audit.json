@@ -1,0 +1,204 @@
+{
+  "schema_version": "steel_patchcore_d3_dependency_audit_v1",
+  "source_lock": {
+    "uri": "model-training/registry/steel-patchcore-d3-release/1.3.0/requirements-cu130.lock",
+    "sha256": "1a26d0f4112471ba837df89286a1eaba2e2a331cff460cd60e8453754eec1e34"
+  },
+  "cuda_local_version_normalization": {
+    "torch": {
+      "locked": "2.13.0+cu130",
+      "audited": "2.13.0"
+    },
+    "torchvision": {
+      "locked": "0.28.0+cu130",
+      "audited": "0.28.0"
+    }
+  },
+  "dependencies": [
+    {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "vulns": []
+    },
+    {
+      "name": "contourpy",
+      "version": "1.3.3",
+      "vulns": []
+    },
+    {
+      "name": "cycler",
+      "version": "0.12.1",
+      "vulns": []
+    },
+    {
+      "name": "filelock",
+      "version": "3.29.0",
+      "vulns": []
+    },
+    {
+      "name": "fonttools",
+      "version": "4.63.0",
+      "vulns": []
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.4.0",
+      "vulns": []
+    },
+    {
+      "name": "jinja2",
+      "version": "3.1.6",
+      "vulns": []
+    },
+    {
+      "name": "joblib",
+      "version": "1.5.3",
+      "vulns": []
+    },
+    {
+      "name": "kiwisolver",
+      "version": "1.5.0",
+      "vulns": []
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "vulns": []
+    },
+    {
+      "name": "matplotlib",
+      "version": "3.11.1",
+      "vulns": []
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "vulns": []
+    },
+    {
+      "name": "narwhals",
+      "version": "2.24.0",
+      "vulns": []
+    },
+    {
+      "name": "networkx",
+      "version": "3.6.1",
+      "vulns": []
+    },
+    {
+      "name": "numpy",
+      "version": "2.4.6",
+      "vulns": []
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "vulns": []
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3",
+      "vulns": []
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "vulns": []
+    },
+    {
+      "name": "psutil",
+      "version": "7.2.2",
+      "vulns": []
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4",
+      "vulns": []
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.46.4",
+      "vulns": []
+    },
+    {
+      "name": "pyparsing",
+      "version": "3.3.2",
+      "vulns": []
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "vulns": []
+    },
+    {
+      "name": "pytz",
+      "version": "2026.3.post1",
+      "vulns": []
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "vulns": []
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.9.0",
+      "vulns": []
+    },
+    {
+      "name": "scipy",
+      "version": "1.17.1",
+      "vulns": []
+    },
+    {
+      "name": "setuptools",
+      "version": "83.0.0",
+      "vulns": []
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "vulns": []
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "vulns": []
+    },
+    {
+      "name": "threadpoolctl",
+      "version": "3.6.0",
+      "vulns": []
+    },
+    {
+      "name": "torch",
+      "version": "2.13.0",
+      "vulns": []
+    },
+    {
+      "name": "torchvision",
+      "version": "0.28.0",
+      "vulns": []
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.15.0",
+      "vulns": []
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.3",
+      "vulns": []
+    },
+    {
+      "name": "tzdata",
+      "version": "2026.3",
+      "vulns": []
+    }
+  ],
+  "fixes": [],
+  "skipped_dependencies": [],
+  "vulnerabilities": [],
+  "verdict": "PASS",
+  "generated_at": "2026-09-01T09:57:52.758024Z"
+}

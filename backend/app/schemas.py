@@ -72,6 +72,11 @@ class InspectionOut(BaseModel):
     product_id: str
     batch_id: str | None = None
     image_url: str | None = None
+    # P0 traceability: content digest + detected media type of the stored
+    # artifact (never the upload filename). Lets auditors verify the served
+    # image_url bytes against the recorded sha256.
+    image_sha256: str | None = None
+    image_media_type: str | None = None
     status: InspectionStatus
     quality_result: QualityResult | None
     final_quality_result: QualityResult | None = None

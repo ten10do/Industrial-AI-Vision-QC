@@ -79,7 +79,7 @@ async def test_unknown_anomaly_creates_review_task_with_anomaly_snapshot(client,
 
 
 @pytest.mark.asyncio
-async def test_resolve_unknown_anomaly_confirm_defect(client, db_session, stub_infer):
+async def test_resolve_unknown_anomaly_confirm_defect(client, db_session, stub_infer, auth):
     stub_infer(StubInference(result=_vision_result_unknown_anomaly()))
     resp = await client.post(
         "/api/v1/inspections",
@@ -88,17 +88,18 @@ async def test_resolve_unknown_anomaly_confirm_defect(client, db_session, stub_i
     )
     inspection_id = resp.json()["inspection_id"]
     task = await _task_for_inspection(db_session, inspection_id)
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     r = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CONFIRM_DEFECT", "human_label": "new_crack", "reason": "verified under light"},
+        headers=auth("reviewer_a"),
+        json={"human_decision": "CONFIRM_DEFECT", "human_label": "new_crack", "reason": "verified under light"},
     )
     assert r.status_code == 200
     assert r.json()["decision"]["final_quality_result"] == "FAIL"
     assert r.json()["decision"]["human_label"] == "new_crack"
     assert r.json()["anomaly_score"] == 0.42
 
-    candidates = (await client.get("/api/v1/training-candidates", params={"kind": "all"})).json()
+    candidates = (await client.get("/api/v1/training-candidates", headers=auth("release-manager"), params={"kind": "all"})).json()
     hit = next((c for c in candidates if c["inspection_id"] == inspection_id), None)
     assert hit is not None
     assert hit["human_label"] == "new_crack"

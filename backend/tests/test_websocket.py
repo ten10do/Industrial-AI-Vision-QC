@@ -42,7 +42,7 @@ async def test_connect_disconnect_lifecycle():
     ws = FakeWS()
     await mgr.connect(ws)
     assert mgr.client_count == 1
-    mgr.disconnect(ws)
+    await mgr.disconnect(ws)
     assert mgr.client_count == 0
 
 

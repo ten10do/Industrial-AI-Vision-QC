@@ -1,0 +1,66 @@
+# Promotion policy (server-owned, immutable at the API boundary).
+#
+# This file is the ONLY source of acceptance thresholds. API callers can no
+# longer pass thresholds: an override is accepted only when it tightens the
+# value below (raise a minimum, lower a maximum). A caller who sends a
+# threshold of 0 to make an empty model pass receives a policy violation, not
+# a promotion.
+#
+# Integrity: set IVQC_PROMOTION_POLICY_SHA256 to the SHA256 of this file. The
+# gate then refuses to evaluate anything when the file has been edited without
+# rotating that environment value. Leaving the pin empty is reported in every
+# gate response as policy_pinned=false and is not a passing configuration for
+# production.
+#
+# `bound` is a hard limit on the policy value itself:
+#   direction: min -> value must be >= bound  (a floor on how lax we may be)
+#   direction: max -> value must be <= bound  (a ceiling on how slow we allow)
+# Loading fails closed when a policy value crosses its bound.
+
+schema_version: "ivqc_promotion_policy_v1"
+policy_id: "steel-production-2026.08"
+
+thresholds:
+  yolo:
+    mAP50:
+      direction: min
+      value: 0.60
+      bound: 0.50
+    recall:
+      direction: min
+      value: 0.60
+      bound: 0.50
+    latency_p95_ms:
+      direction: max
+      value: 120.0
+      bound: 400.0
+
+  patchcore:
+    image_auroc:
+      direction: min
+      value: 0.90
+      bound: 0.80
+    pixel_auroc:
+      direction: min
+      value: 0.90
+      bound: 0.80
+    latency_ms:
+      direction: max
+      value: 2000.0
+      bound: 8000.0
+
+# Non-numeric gates. Each entry is enforced before the metric comparison, and
+# a missing/unverifiable input blocks promotion instead of degrading to warn.
+provenance_requirements:
+  # Metrics must be written by the signed trusted pipeline, never by the caller.
+  require_attested_metrics: true
+  # The server must have recomputed the artifact SHA256 from the artifact itself.
+  require_verified_artifact_hash: true
+  # domain_validated must be backed by an eval report the server has hashed.
+  require_verified_domain_evidence: true
+
+approval:
+  min_approvals: 1
+  # The operator who calls /promote cannot be the approver of record.
+  forbid_self_approval: true
+  min_reason_chars: 8

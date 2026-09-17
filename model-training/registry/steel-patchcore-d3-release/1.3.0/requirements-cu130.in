@@ -1,0 +1,43 @@
+# D3 1.3 qualified runtime input.
+# Source of truth: the qualified Python 3.11 / CUDA 13.0 host runtime.
+# Compile for Windows CPython 3.11 with:
+#   pip-compile --generate-hashes --resolver=backtracking --output-file requirements-cu130.lock requirements-cu130.in
+
+--extra-index-url https://download.pytorch.org/whl/cu130
+
+annotated-types==0.8.0
+contourpy==1.3.3
+cycler==0.12.1
+filelock==3.29.0
+fonttools==4.63.0
+fsspec==2026.4.0
+jinja2==3.1.6
+joblib==1.5.3
+kiwisolver==1.5.0
+markupsafe==3.0.3
+matplotlib==3.11.1
+mpmath==1.3.0
+narwhals==2.24.0
+networkx==3.6.1
+numpy==2.4.6
+packaging==26.3
+pandas==2.3.3
+pillow==12.3.0
+psutil==7.2.2
+pydantic==2.13.4
+pydantic-core==2.46.4
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+pytz==2026.3.post1
+pyyaml==6.0.3
+scikit-learn==1.9.0
+scipy==1.17.1
+setuptools==83.0.0
+six==1.17.0
+sympy==1.14.0
+threadpoolctl==3.6.0
+torch==2.13.0+cu130
+torchvision==0.28.0+cu130
+typing-extensions==4.15.0
+typing-inspection==0.4.3
+tzdata==2026.3

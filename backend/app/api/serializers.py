@@ -17,6 +17,8 @@ def to_inspection_out(inspection: Inspection) -> InspectionOut:
         product_id=inspection.product.product_id,
         batch_id=inspection.batch_id,
         image_url=f"/api/v1/inspections/{inspection.inspection_id}/image",
+        image_sha256=inspection.image_sha256,
+        image_media_type=inspection.image_media_type,
         status=inspection.status,
         quality_result=inspection.quality_result,
         final_quality_result=inspection.final_quality_result,

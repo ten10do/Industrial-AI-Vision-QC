@@ -16,12 +16,30 @@ declaring READY. No version-less `best.pt` startup (8C boundary).
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any
 
 DEFAULT_MANIFEST_PATH = Path(__file__).resolve().parents[2] / "config" / "deployment_manifest.yaml"
 
+# Written by POST /api/v1/models/{id}/activate. The hand-maintained manifest
+# stays the source of truth for humans; the generated one is what the running
+# stack is pinned to, and it wins when present so that a registry PRODUCTION
+# change actually reaches the inference process instead of staying in the DB.
+ACTIVATED_MANIFEST_NAME = "deployment_manifest.activated.yaml"
+
 _MANIFEST: dict[str, Any] | None = None
+
+
+def resolve_manifest_path(path: Path | None = None) -> Path:
+    """Precedence: explicit argument > IVQC_MANIFEST > activated > default."""
+    if path is not None:
+        return Path(path)
+    env = os.environ.get("IVQC_MANIFEST")
+    if env:
+        return Path(env).resolve()
+    activated = DEFAULT_MANIFEST_PATH.with_name(ACTIVATED_MANIFEST_NAME)
+    return activated if activated.exists() else DEFAULT_MANIFEST_PATH
 
 
 def sha256_of(path: Path) -> str:
@@ -36,7 +54,7 @@ def load_manifest(path: Path | None = None) -> dict[str, Any]:
     """Load and validate the deployment manifest YAML."""
     import yaml
 
-    p = path or DEFAULT_MANIFEST_PATH
+    p = resolve_manifest_path(path)
     if not p.exists():
         raise FileNotFoundError(f"deployment manifest not found: {p}")
     data = yaml.safe_load(p.read_text(encoding="utf-8"))
@@ -52,9 +70,12 @@ def load_manifest(path: Path | None = None) -> dict[str, Any]:
 
 
 def get_manifest(path: Path | None = None) -> dict[str, Any]:
+    """Cached manifest. An explicit path always re-reads (no cache pollution)."""
     global _MANIFEST
+    if path is not None:
+        return load_manifest(path)
     if _MANIFEST is None:
-        _MANIFEST = load_manifest(path)
+        _MANIFEST = load_manifest(resolve_manifest_path())
     return _MANIFEST
 
 

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_session
 from ..copilot.conversation import conversation_store
 from ..copilot.service import CopilotService
+from ..security.auth import require_any_authenticated
 
 router = APIRouter(prefix="/api/v1/copilot", tags=["copilot"])
 
@@ -24,7 +25,7 @@ class QueryIn(BaseModel):
     message: str
 
 
-@router.post("/query")
+@router.post("/query", dependencies=[Depends(require_any_authenticated())])
 async def copilot_query(
     body: QueryIn,
     session: AsyncSession = Depends(get_session),
@@ -36,9 +37,9 @@ async def copilot_query(
     )
 
 
-@router.get("/conversations/{conversation_id}")
+@router.get("/conversations/{conversation_id}", dependencies=[Depends(require_any_authenticated())])
 async def copilot_conversation(conversation_id: str) -> dict:
-    conv = conversation_store.get(conversation_id)
+    conv = await conversation_store.get(conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "conversation not found"}})
     return conv.to_dict()

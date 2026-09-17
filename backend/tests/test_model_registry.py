@@ -17,7 +17,15 @@ from app.mlops.drift import classify_ks, classify_psi, defect_distribution_delta
 from app.mlops.manifest import load_manifest, reset_manifest_cache, sha256_of, validate_artifacts
 from app.mlops.promotion_gate import evaluate
 from app.models import Base, ModelRegistry
-from app.services.registry_service import RegistryError, RegistryService
+from app.security.auth import ROLE_ADMIN, ROLE_APPROVER, ROLE_PIPELINE, Principal
+from app.services.registry_service import RegistryError, RegistryService, provenance_for
+
+PIPELINE = Principal(subject="eval-pipeline", roles=frozenset({ROLE_PIPELINE}))
+APPROVER = Principal(subject="release-manager", roles=frozenset({ROLE_APPROVER}))
+APPROVER_NAME = "qa-director"
+REASON = "unit test promotion acceptance"
+
+ARTIFACT_URI = "inference-service/models/best.pt"
 
 
 @pytest_asyncio.fixture
@@ -31,13 +39,54 @@ async def db():
     await engine.dispose()
 
 
+@pytest.fixture(scope="session")
+def artifact_sha256(artifact) -> str:
+    """The sha256 of the file registered as ARTIFACT_URI.
+
+    Depends on the shared ``artifact`` fixture so the file is guaranteed to
+    exist before it is hashed: on a fresh checkout (CI) there is no real
+    model, and the fixture synthesizes a stand-in at exactly this path, so
+    the hash describes the same bytes the server will re-hash."""
+    return sha256_of(Path(__file__).resolve().parents[2] / ARTIFACT_URI)
+
+
+def _gate(entry: ModelRegistry) -> object:
+    """Evaluate the gate the way the API does: policy thresholds plus the
+    provenance recorded on the row."""
+    return evaluate(
+        entry.model_type,
+        metrics=entry.metadata_json or {},
+        domain_validated=entry.domain_validated,
+        required_domain="steel",
+        provenance=provenance_for(entry),
+    )
+
+
+def _evidence(eval_report: dict) -> dict:
+    return {
+        "domain": "steel",
+        "dataset_version": "neu-det-yolo-v1",
+        "eval_report_uri": eval_report["uri"],
+        "eval_report_sha256": eval_report["sha256"],
+        "validated_by": "eval-pipeline",
+    }
+
+
 # ---- promotion gate ----
+
+FULL_PROVENANCE = {
+    "metrics_attested": True,
+    "artifact_hash_verified": True,
+    "domain_evidence_verified": True,
+    "domain": "steel",
+}
+
 
 def test_yolo_gate_pass():
     g = evaluate(
         "yolo",
         metrics={"mAP50": 0.82, "recall": 0.78, "latency_p95_ms": 21.5},
-        domain_validated=True, required_domain="steel",
+        domain_validated=True, required_domain="steel", provenance=FULL_PROVENANCE,
     )
     assert g.passed is True
     assert g.blocked == []
@@ -47,7 +96,7 @@ def test_yolo_gate_reject_low_metric():
     g = evaluate(
         "yolo",
         metrics={"mAP50": 0.4, "recall": 0.78, "latency_p95_ms": 21.5},
-        domain_validated=True, required_domain="steel",
+        domain_validated=True, required_domain="steel", provenance=FULL_PROVENANCE,
     )
     assert g.passed is False
     assert any("mAP50" in b for b in g.blocked)
@@ -59,7 +108,7 @@ def test_yolo_gate_reject_excessive_latency():
     g = evaluate(
         "yolo",
         metrics={"mAP50": 0.82, "recall": 0.78, "latency_p95_ms": 5000.0},
-        domain_validated=True, required_domain="steel",
+        domain_validated=True, required_domain="steel", provenance=FULL_PROVENANCE,
     )
     assert g.passed is False
     assert any("latency" in b for b in g.blocked)
@@ -72,6 +121,8 @@ def test_patchcore_domain_mismatch_rejects_perfect_auroc():
         "patchcore",
         metrics={"image_auroc": 1.0, "pixel_auroc": 0.986, "latency_ms": 755.0},
         domain_validated=False, required_domain="steel",
+        provenance={"metrics_attested": True, "artifact_hash_verified": True,
+                    "domain_evidence_verified": False, "domain": "steel"},
     )
     assert g.passed is False
     assert any("domain" in b for b in g.blocked)
@@ -79,41 +130,58 @@ def test_patchcore_domain_mismatch_rejects_perfect_auroc():
 
 # ---- registry ----
 
-async def _register_yolo(svc, session, version="1.0.0", domain=True, metrics=None):
+async def _register_yolo(svc, session, eval_report, artifact_sha256, version="1.0.0", domain=True, metrics=None):
     return await svc.register(
-        session, model_name="neu-yolov8s", model_version=version, model_type="yolo",
-        artifact_uri="inference-service/models/best.pt", artifact_sha256="abc123",
+        session, actor=PIPELINE, model_name="neu-yolov8s", model_version=version, model_type="yolo",
+        artifact_uri=ARTIFACT_URI, artifact_sha256=artifact_sha256,
         dataset_version="neu-det-yolo-v1", training_run_id=f"run-{version}",
         metrics=metrics or {"mAP50": 0.82, "recall": 0.78, "latency_p95_ms": 21.5},
-        domain_validated=domain,
+        domain_validated=domain, domain_evidence=_evidence(eval_report) if domain else None,
+    )
+
+
+async def _promote(svc, session, entry):
+    return await svc.promote(
+        session, entry, gate=_gate(entry), required_domain="steel",
+        actor=APPROVER, approved_by=APPROVER_NAME, reason=REASON,
     )
 
 
 @pytest.mark.asyncio
-async def test_register_and_duplicate_version(db):
+async def test_register_and_duplicate_version(db, eval_report, artifact_sha256):
     svc = RegistryService()
-    m = await _register_yolo(svc, db)
+    m = await _register_yolo(svc, db, eval_report, artifact_sha256)
     assert m.status == "CANDIDATE"
     await db.commit()
     with pytest.raises(RegistryError) as e:
-        await _register_yolo(svc, db, version="1.0.0")
+        await _register_yolo(svc, db, eval_report, artifact_sha256, version="1.0.0")
     assert e.value.code == "duplicate_version"
 
 
 @pytest.mark.asyncio
-async def test_production_unique_after_promote(db):
+async def test_register_verifies_the_artifact_hash(db, eval_report, artifact_sha256):
+    """A wrong hash is stored, but flagged unverified, so the gate still
+    blocks the promotion."""
     svc = RegistryService()
-    v1 = await _register_yolo(svc, db, version="1.0.0")
+    m = await _register_yolo(svc, db, eval_report, "0" * 64)
     await db.commit()
-    # promote v1 (gate passes: good metrics + domain validated)
-    g1 = evaluate("yolo", metrics=v1.metadata_json, domain_validated=v1.domain_validated, required_domain="steel")
-    await svc.promote(db, v1, gate=g1, required_domain="steel")
+    assert m.artifact_hash_verified is False
+    assert _gate(m).passed is False
+
+
+@pytest.mark.asyncio
+async def test_production_unique_after_promote(db, eval_report, artifact_sha256):
+    svc = RegistryService()
+    v1 = await _register_yolo(svc, db, eval_report, artifact_sha256, version="1.0.0")
+    await db.commit()
+    assert _gate(v1).passed is True, _gate(v1).blocked
+    await _promote(svc, db, v1)
     await db.commit()
 
-    v2 = await _register_yolo(svc, db, version="2.0.0", metrics={"mAP50": 0.9, "recall": 0.85, "latency_p95_ms": 18.0})
+    v2 = await _register_yolo(svc, db, eval_report, artifact_sha256, version="2.0.0",
+                              metrics={"mAP50": 0.9, "recall": 0.85, "latency_p95_ms": 18.0})
     await db.commit()
-    g2 = evaluate("yolo", metrics=v2.metadata_json, domain_validated=v2.domain_validated, required_domain="steel")
-    await svc.promote(db, v2, gate=g2, required_domain="steel")
+    await _promote(svc, db, v2)
     await db.commit()
 
     # only v2 is PRODUCTION; v1 was archived
@@ -124,37 +192,61 @@ async def test_production_unique_after_promote(db):
 
 
 @pytest.mark.asyncio
-async def test_promote_rejected_by_domain(db):
+async def test_promote_rejected_by_domain(db, eval_report, artifact_sha256):
     svc = RegistryService()
     bad = await svc.register(
-        session=db, model_name="mvtec-patchcore", model_version="1.0.0", model_type="patchcore",
+        session=db, actor=PIPELINE, model_name="mvtec-patchcore", model_version="1.0.0",
+        model_type="patchcore",
         artifact_uri="inference-service/models/patchcore-bottle/bank.npz", artifact_sha256="x",
         dataset_version="mvtec-bottle-v1", metrics={"image_auroc": 1.0, "pixel_auroc": 0.986, "latency_ms": 755.0},
         domain_validated=False,  # MVTec baseline NOT validated for steel
     )
     await db.commit()
-    g = evaluate("patchcore", metrics=bad.metadata_json, domain_validated=bad.domain_validated, required_domain="steel")
     with pytest.raises(RegistryError) as e:
-        await svc.promote(db, bad, gate=g, required_domain="steel")
+        await _promote(svc, db, bad)
     assert e.value.code == "promotion_gate_failed"
-    # and even a manual-click style promote must be blocked at the API by the gate
 
 
 @pytest.mark.asyncio
-async def test_rollback_switches_production(db):
+async def test_promote_requires_a_distinct_approver(db, eval_report, artifact_sha256):
     svc = RegistryService()
-    v1 = await _register_yolo(svc, db, version="1.0.0")
-    v2 = await _register_yolo(svc, db, version="2.0.0")
+    v = await _register_yolo(svc, db, eval_report, artifact_sha256)
+    await db.commit()
+    with pytest.raises(RegistryError) as e:
+        await svc.promote(db, v, gate=_gate(v), required_domain="steel", actor=APPROVER,
+                          approved_by=APPROVER.subject, reason=REASON)
+    assert e.value.code == "self_approval_forbidden"
+
+
+@pytest.mark.asyncio
+async def test_rollback_switches_production(db, eval_report, artifact_sha256):
+    svc = RegistryService()
+    v1 = await _register_yolo(svc, db, eval_report, artifact_sha256, version="1.0.0")
+    v2 = await _register_yolo(svc, db, eval_report, artifact_sha256, version="2.0.0")
     await db.commit()
     for v in (v1, v2):
-        g = evaluate("yolo", metrics=v.metadata_json, domain_validated=True, required_domain="steel")
-        await svc.promote(db, v, gate=g, required_domain="steel")
+        await _promote(svc, db, v)
         await db.commit()
 
     assert (await svc.get_production(db, "neu-yolov8s")).model_version == "2.0.0"
-    await svc.rollback(db, "neu-yolov8s", "1.0.0")
+    await svc.rollback(db, "neu-yolov8s", "1.0.0", actor=APPROVER,
+                       approved_by=APPROVER_NAME, reason="rollback unit test")
     await db.commit()
     assert (await svc.get_production(db, "neu-yolov8s")).model_version == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_audit_trail_records_every_transition(db, eval_report, artifact_sha256):
+    svc = RegistryService()
+    v = await _register_yolo(svc, db, eval_report, artifact_sha256)
+    await db.commit()
+    await _promote(svc, db, v)
+    await db.commit()
+    trail = await svc.audit_trail(db, v.id)
+    assert [r.action for r in trail] == ["register", "attest", "promote"]
+    assert all(r.outcome == "APPLIED" for r in trail)
+    assert trail[-1].approved_by == APPROVER_NAME
+    assert trail[-1].gate["passed"] is True
 
 
 # ---- drift ----

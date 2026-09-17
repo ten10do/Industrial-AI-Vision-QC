@@ -95,9 +95,23 @@ def main() -> int:
     print("mlflow run:", rid)
 
     from app.models import Base, ModelRegistry
+    from app.security.auth import ROLE_PIPELINE, Principal
     from app.services.registry_service import RegistryService
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    # This script IS the trusted pipeline: it computes the artifact hash from
+    # the bytes and produces the evaluation report the domain verdict rests on.
+    PIPELINE = Principal(subject="script:mlops_register_steel", roles=frozenset({ROLE_PIPELINE}))
+    eval_report_uri = EVAL.relative_to(ROOT).as_posix()
+    eval_sha = _sha256(EVAL)
+    domain_evidence = {
+        "domain": "steel",
+        "dataset_version": "severstal-steel-v1",
+        "eval_report_uri": eval_report_uri,
+        "eval_report_sha256": eval_sha,
+        "validated_by": "script:mlops_register_steel",
+    }
 
     async def register() -> list:
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -108,6 +122,7 @@ def main() -> int:
             svc = RegistryService()
             m = await svc.register(
                 session,
+                actor=PIPELINE,
                 model_name="steel-patchcore",
                 model_version="1.0.0",
                 model_type="patchcore",
@@ -122,12 +137,14 @@ def main() -> int:
                     **{k: op.get(k) for k in ("precision", "recall", "f1", "normal_fpr", "anomaly_recall")},
                 },
                 domain_validated=domain_validated,
+                domain_evidence=domain_evidence,
                 notes="Optimization 1 steel-domain PatchCore baseline (Severstal); "
                       "domain_validated strictly = validated on selected Severstal steel domain only",
             )
             await session.commit()
             rows = (await session.execute(select(ModelRegistry))).scalars().all()
-            return [(r.model_name, r.model_version, r.status, r.domain_validated) for r in rows]
+            return [(r.model_name, r.model_version, r.status, r.domain_validated,
+                     r.artifact_hash_verified, r.domain_evidence_verified) for r in rows]
         await engine.dispose()
 
     rows = asyncio.run(register())

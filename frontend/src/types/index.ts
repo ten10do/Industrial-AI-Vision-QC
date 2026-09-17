@@ -357,3 +357,122 @@ export interface CopilotConversation {
   updated_at: number;
   turns: Array<{ role: string; content: string; tools: string[] }>;
 }
+
+// ---- Error Analysis Pipeline + Model Quality Gate ----
+
+export type QualityGateVerdict = "PASS" | "HOLD" | "NOT_ENFORCED";
+
+export interface QualityGateRule {
+  rule: string;
+  message: string;
+  got?: number | null;
+  required?: number | string | null;
+  direction?: "min" | "max";
+  source?: string | null;
+  category?: string;
+}
+
+export interface QualityGateEnforcement {
+  enforced_model_types: string[];
+  require_evaluation_evidence: boolean;
+  enabled: boolean;
+}
+
+export interface QualityGatePolicySummary {
+  policy_id: string;
+  policy_sha256: string;
+  policy_pinned: boolean;
+  policy_status: string;
+  policy_path?: string;
+  policy_notes?: string[];
+  enforcement: QualityGateEnforcement;
+  evidence_requirements?: Record<string, boolean>;
+  max_evidence_age_days?: number | null;
+  model_types?: string[];
+  thresholds_used?: Record<string, number>;
+  rule_sources?: Record<string, string | null>;
+}
+
+export interface QualityGateEvidenceRef {
+  evaluation_id?: string | null;
+  fingerprint: string | null;
+  model_name: string | null;
+  model_version: string | null;
+  dataset: string | null;
+  split: string | null;
+  sample_count: number | null;
+  threshold: number | null;
+  evaluation_time: string | null;
+}
+
+export interface QualityGateResult {
+  verdict: QualityGateVerdict;
+  passed: boolean;
+  enforced: boolean;
+  allows_promotion: boolean;
+  checks: Array<{ check: string; passed: boolean; got: unknown; required: unknown; category: string }>;
+  failed_rules: QualityGateRule[];
+  failed_rule_codes: string[];
+  warnings: QualityGateRule[];
+  warning_codes: string[];
+  metrics: Record<string, number>;
+  policy?: QualityGatePolicySummary;
+  evidence?: QualityGateEvidenceRef | null;
+  reason?: string;
+  timestamp: string;
+}
+
+export interface ModelEvaluationMetrics {
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+  false_accept_rate: number | null;
+  false_reject_rate: number | null;
+  latency_p95_ms: number | null;
+}
+
+export interface ModelEvaluation {
+  id: string;
+  registry_id: string | null;
+  model_name: string;
+  model_version: string;
+  model_type: string | null;
+  task: string;
+  dataset: { name: string; split: string };
+  sample_count: number;
+  threshold: number | null;
+  metrics: ModelEvaluationMetrics;
+  confusion_matrix: number[][];
+  report_sha256: string;
+  report_uri: string | null;
+  attested_by: string | null;
+  evaluation_time: string | null;
+  created_at: string | null;
+}
+
+export interface ModelEvaluationList {
+  model: string;
+  count: number;
+  evaluations: ModelEvaluation[];
+}
+
+export interface QualityGateResponse {
+  model: string;
+  quality_gate: QualityGateResult;
+}
+
+export interface ModelGateResponse {
+  model: string;
+  gate: GateResult;
+  quality_gate: QualityGateResult;
+  promotion_allowed: boolean;
+}
+
+export interface QualityGatePolicyResponse {
+  available: boolean;
+  enforcement_enabled: boolean;
+  verdicts: QualityGateVerdict[];
+  policy?: QualityGatePolicySummary;
+  error?: string;
+  note?: string;
+}

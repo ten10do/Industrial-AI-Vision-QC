@@ -167,7 +167,7 @@ class ReviewService:
         self,
         session: AsyncSession,
         *,
-        status: str | None = None,
+        status: ReviewTaskStatus | None = None,
         priority: int | None = None,
         defect_type: str | None = None,
         production_line: str | None = None,
@@ -182,7 +182,7 @@ class ReviewService:
             selectinload(ReviewTask.decision),
         )
         if status:
-            stmt = stmt.where(ReviewTask.status == ReviewTaskStatus(status))
+            stmt = stmt.where(ReviewTask.status == status)
         if priority is not None:
             stmt = stmt.where(ReviewTask.priority <= priority)
         if defect_type:

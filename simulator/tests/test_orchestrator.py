@@ -16,6 +16,21 @@ from simulator.orchestrator import InspectionOrchestrator  # noqa: E402
 
 IMG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x00\x00\xff\xd9"
 
+# P0: the backend is fail-closed, so every pipeline run must present bearer
+# credentials. Tests use dedicated operator / pipeline identities.
+OP_TOKEN = "test-operator-token"
+PIPE_TOKEN = "test-pipeline-token"
+
+
+def cfg(**overrides) -> OrchestratorConfig:
+    base = dict(
+        backend_url="http://test",
+        api_token=OP_TOKEN,
+        pipeline_token=PIPE_TOKEN,
+    )
+    base.update(overrides)
+    return OrchestratorConfig(**base)
+
 
 def capture(product: str = "P-000001", key: str = "cap-1") -> dict:
     return {
@@ -73,8 +88,8 @@ def ok_handler(body=None):
 @pytest.mark.asyncio
 async def test_orchestrator_success_flow(tmp_path):
     src = make_src(tmp_path, 3)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=0, telemetry_interval_seconds=999)
-    orch = await run_orchestrator(httpx.MockTransport(ok_handler()), cfg, src, max_images=3)
+    orch_cfg = cfg(workers=1, retry_max=0, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(ok_handler()), orch_cfg, src, max_images=3)
     m = orch.metrics
     assert m.captured_total == 3
     assert m.completed_total == 3
@@ -101,9 +116,8 @@ async def test_orchestrator_retry_then_success(tmp_path):
         })
 
     src = make_src(tmp_path, 1)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=2, retry_base_ms=10,
-                             telemetry_interval_seconds=999)
-    orch = await run_orchestrator(httpx.MockTransport(handler), cfg, src, max_images=1)
+    orch_cfg = cfg(workers=1, retry_max=2, retry_base_ms=10, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(handler), orch_cfg, src, max_images=1)
     assert calls["n"] == 3  # 2 failed attempts + 1 success
     assert orch.metrics.completed_total == 1
     assert orch.metrics.failed_total == 0
@@ -121,9 +135,8 @@ async def test_orchestrator_no_infinite_retry(tmp_path):
         return httpx.Response(500, json={"error": {"code": "boom"}})
 
     src = make_src(tmp_path, 3)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=2, retry_base_ms=10,
-                             telemetry_interval_seconds=999)
-    orch = await run_orchestrator(httpx.MockTransport(handler), cfg, src, max_images=3)
+    orch_cfg = cfg(workers=1, retry_max=2, retry_base_ms=10, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(handler), orch_cfg, src, max_images=3)
     assert orch.metrics.failed_total == 3
     assert orch.metrics.completed_total == 0
     assert calls["n"] == 3 * 3  # 3 captures x (1 + 2 retries)
@@ -147,9 +160,8 @@ async def test_orchestrator_timeout_retry_idempotent(tmp_path):
         })
 
     src = make_src(tmp_path, 1)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=2, retry_base_ms=10,
-                             telemetry_interval_seconds=999)
-    orch = await run_orchestrator(httpx.MockTransport(handler), cfg, src, max_images=1)
+    orch_cfg = cfg(workers=1, retry_max=2, retry_base_ms=10, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(handler), orch_cfg, src, max_images=1)
     assert calls["n"] == 2
     assert orch.metrics.completed_total == 1  # one logical inspection despite 2 HTTP calls
     assert orch.metrics.fail_total == 1
@@ -173,9 +185,8 @@ async def test_failed_persisted_inspection_not_counted_as_success(tmp_path):
         })
 
     src = make_src(tmp_path, 1)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=2, retry_base_ms=10,
-                             telemetry_interval_seconds=999)
-    orch = await run_orchestrator(httpx.MockTransport(handler), cfg, src, max_images=1)
+    orch_cfg = cfg(workers=1, retry_max=2, retry_base_ms=10, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(handler), orch_cfg, src, max_images=1)
     assert calls["n"] == 2  # 504 then idempotent replay, no further retry
     assert orch.metrics.failed_total == 1
     assert orch.metrics.completed_total == 0
@@ -196,10 +207,9 @@ async def test_conservation_law_during_run(tmp_path):
         })
 
     src = make_src(tmp_path, 10)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=0,
-                             telemetry_interval_seconds=999, queue_size=5)
+    orch_cfg = cfg(workers=1, retry_max=0, telemetry_interval_seconds=999, queue_size=5)
     client = httpx.AsyncClient(transport=httpx.MockTransport(slow_handler), timeout=10)
-    orch = InspectionOrchestrator(cfg, client=client)
+    orch = InspectionOrchestrator(orch_cfg, client=client)
     sim = CameraSimulator(SimulatorConfig(source_directory=str(src), interval_ms=5, loop=False), orch.queue)
     task = asyncio.create_task(orch.run(sim, max_images=10))
 
@@ -235,13 +245,13 @@ async def test_conservation_law_during_run(tmp_path):
 @pytest.mark.asyncio
 async def test_queue_bounded_and_no_drop(tmp_path):
     src = make_src(tmp_path, 5)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=0, retry_max=0, telemetry_interval_seconds=999)
-    orch = InspectionOrchestrator(cfg)
+    orch_cfg = cfg(workers=0, retry_max=0, telemetry_interval_seconds=999)
+    orch = InspectionOrchestrator(orch_cfg)
     sim = CameraSimulator(SimulatorConfig(source_directory=str(src), interval_ms=1, loop=False), orch.queue)
     sim.start()
     await asyncio.sleep(0.3)
-    assert orch.queue.qsize() <= cfg.queue_size, "queue must never exceed maxsize"
-    assert sim.captured_count <= cfg.queue_size  # producer blocked at capacity
+    assert orch.queue.qsize() <= orch_cfg.queue_size, "queue must never exceed maxsize"
+    assert sim.captured_count <= orch_cfg.queue_size  # producer blocked at capacity
     await sim.stop()
 
 
@@ -249,9 +259,58 @@ async def test_queue_bounded_and_no_drop(tmp_path):
 async def test_simulator_exhaustion_stops_pipeline(tmp_path):
     """loop=False + source exhausted -> pipeline terminates with all captures accounted."""
     src = make_src(tmp_path, 2)
-    cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=0, telemetry_interval_seconds=999)
-    orch = await run_orchestrator(httpx.MockTransport(ok_handler()), cfg, src, max_images=None)
+    orch_cfg = cfg(workers=1, retry_max=0, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(ok_handler()), orch_cfg, src, max_images=None)
     m = orch.metrics
     assert m.captured_total == 2
     assert m.completed_total == 2
     assert m.failed_total == 0
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_attaches_bearer_tokens(tmp_path):
+    """P0: inspection POSTs carry the operator bearer token; the telemetry
+    push carries the pipeline (internal service) bearer token. No request may
+    leave the orchestrator without an Authorization header."""
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, request.headers.get("authorization")))
+        if request.url.path.endswith("/realtime/telemetry"):
+            return httpx.Response(200, json={"status": "ok"})
+        return httpx.Response(201, json={
+            "inspection_id": "insp-x", "product_id": "P", "status": "completed",
+            "quality_result": "PASS", "severity": "low", "defects": [], "inference_latency_ms": 9.0,
+        })
+
+    src = make_src(tmp_path, 2)
+    orch_cfg = cfg(workers=1, retry_max=0, telemetry_interval_seconds=999)
+    orch = await run_orchestrator(httpx.MockTransport(handler), orch_cfg, src, max_images=2)
+    assert orch.metrics.completed_total == 2
+
+    inspection_headers = [h for p, h in seen if not p.endswith("/realtime/telemetry")]
+    assert inspection_headers, "no inspection POST observed"
+    assert all(h == f"Bearer {OP_TOKEN}" for h in inspection_headers), inspection_headers
+
+    # telemetry interval is 999s, so the loop never fired during run(); call
+    # the one-shot push directly to verify the pipeline identity header.
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=10)
+    orch2 = InspectionOrchestrator(orch_cfg, client=client)
+    await orch2._push_telemetry()
+    await client.aclose()
+    telemetry_headers = [h for p, h in seen if p.endswith("/realtime/telemetry")]
+    assert telemetry_headers, "no telemetry POST observed"
+    assert all(h == f"Bearer {PIPE_TOKEN}" for h in telemetry_headers), telemetry_headers
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_fails_fast_without_tokens(tmp_path):
+    """P0: the backend is fail-closed; a pipeline run without credentials must
+    refuse to start instead of silently failing every capture."""
+    src = make_src(tmp_path, 2)
+    orch_cfg = OrchestratorConfig(backend_url="http://test", workers=1, retry_max=0,
+                                  telemetry_interval_seconds=999)  # no tokens
+    orch = InspectionOrchestrator(orch_cfg)
+    sim = CameraSimulator(SimulatorConfig(source_directory=str(src), interval_ms=1, loop=False), orch.queue)
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        await orch.run(sim, max_images=2)

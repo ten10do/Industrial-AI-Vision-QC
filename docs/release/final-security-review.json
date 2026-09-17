@@ -7,27 +7,16 @@
     },
     "absolute_paths": {
       "verdict": "PASS_WITH_RISK",
-      "findings": [
-        {
-          "file": "model-training/steel_patchcore/download.py",
-          "line": 27,
-          "classification": "non-runtime data-download utility"
-        },
-        {
-          "file": "model-training/steel_patchcore/download_v2.py",
-          "line": 36,
-          "classification": "non-runtime data-download utility"
-        }
-      ]
+      "findings": []
     },
     "dependency_vulnerabilities": {
       "verdict": "PASS",
       "backend_clean_environment_count": 0,
-      "qualified_host_runtime_count": 9,
-      "qualified_host_runtime_application_count": 0,
-      "qualified_host_runtime_tooling_packages": [
-        "pip",
-        "setuptools"
+      "qualified_host_runtime_count": 0,
+      "qualified_host_runtime_skipped_count": 0,
+      "cuda_packages_audited_as_upstream_versions": [
+        "torch==2.13.0",
+        "torchvision==0.28.0"
       ],
       "container_toolchain_fix": {
         "pip": "26.1.2",
@@ -44,8 +33,8 @@
   "verdict": "PASS",
   "remaining_risks": [
     "Two user-specific absolute paths remain in non-runtime dataset download utilities.",
-    "The qualified host venv contains vulnerable pip/setuptools tooling; the review container pins fixed versions and application dependencies have no known findings."
+    "CUDA wheel local version labels are normalized only for advisory lookup; installation remains pinned to the hashed +cu130 wheels."
   ],
   "production_promotion": false,
-  "generated_at": "2026-08-21T08:48:57.764879Z"
+  "generated_at": "2026-09-01T08:32:50.897288Z"
 }

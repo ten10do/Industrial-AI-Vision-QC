@@ -241,7 +241,7 @@ _PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>IVQC Closed-Loop Dashboard</title>
+<title>工业 AI 视觉质检与异常闭环处理系统</title>
 <style>
   :root { color-scheme: dark; }
   body { margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:#0f1419; color:#d8dee6; }
@@ -274,7 +274,7 @@ _PAGE = """<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1>IndustrialVision-QC · Closed-Loop Dashboard</h1>
+  <h1>工业 AI 视觉质检与异常闭环处理系统</h1>
   <nav class="nav">
     <a href="#/" data-page="live">Live</a>
     <a href="#/runtime" data-page="runtime">Runtime</a>

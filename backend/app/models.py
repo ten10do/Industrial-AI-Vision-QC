@@ -73,6 +73,11 @@ class Inspection(TimestampMixin, Base):
     inference_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     inference_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     image_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # P0 traceability: the stored artifact's real URI, content digest and
+    # detected media type. image_path must never hold the upload filename;
+    # it points at bytes that actually exist on disk.
+    image_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_media_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     # ---- Phase 8 MLOps: deployment traceability (8D) ----
@@ -268,6 +273,11 @@ class ModelRegistry(TimestampMixin, Base):
     status lifecycle: CANDIDATE -> STAGING -> PRODUCTION -> ARCHIVED.
     At most one PRODUCTION row per model_name is enforced in the DB by a
     partial unique index (status='PRODUCTION').
+
+    Provenance columns (governance hardening): metrics, domain_validated and
+    artifact_sha256 are privileged facts. They are only ever written through
+    the signed trusted-pipeline attestation path, and each carries a
+    server-computed verification flag that the promotion gate enforces.
     """
 
     __tablename__ = "model_registry"
@@ -286,6 +296,116 @@ class ModelRegistry(TimestampMixin, Base):
     domain_validated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
+    # ---- provenance (attested by the trusted pipeline, verified server-side) ----
+    attested_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attestation_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_hash_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    domain_evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    domain_evidence_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ---- human approval ----
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    approval_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    # ---- runtime activation (registry -> deployment manifest) ----
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activation_target: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class ModelRegistryAudit(TimestampMixin, Base):
+    """Append-only governance journal.
+
+    Every mutation and every *denied* attempt lands here. Rows are never
+    updated or deleted through the API: promotion, rollback, archive and
+    activation each append one record before and one after the transition.
+    """
+
+    __tablename__ = "model_registry_audit"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    registry_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("model_registry.id"), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    action: Mapped[str] = mapped_column(String(32), nullable=False)  # register|attest|promote|rollback|archive|activate
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)  # APPLIED|DENIED|ERROR
+    from_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    actor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    actor_roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
+    gate: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+Index("ix_model_registry_audit_registry", ModelRegistryAudit.__table__.c.registry_id)
+Index("ix_model_registry_audit_created", ModelRegistryAudit.__table__.c.created_at)
+
+
+class ModelEvaluation(TimestampMixin, Base):
+    """Stored evaluation evidence for one model version (Error Analysis Pipeline).
+
+    One row is one offline evaluation of one model version on one dataset
+    split. It is the evidence the quality gate reads, so it is written only
+    through the signed trusted-pipeline path and is append-only: a re-run
+    appends a new row rather than editing the old one, which is what makes
+    "the gate passed, and here is what it read" checkable after the fact.
+
+    The scalar columns are a denormalised index of the report so that a list
+    endpoint or a dashboard cell never has to parse the JSON payload; the
+    payload itself (``report``) is the source of truth and is re-hashed by the
+    server on submission.
+    """
+
+    __tablename__ = "model_evaluations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    registry_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("model_registry.id"), nullable=True)
+
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    task: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    dataset_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    dataset_split: Mapped[str] = mapped_column(String(64), nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    precision: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recall: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    false_accept_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    false_reject_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latency_p95_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    true_positive: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    true_negative: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    false_positive: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    false_negative: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # The full structured report and the SHA256 of its canonical form. The
+    # fingerprint is recomputed server-side on submission: a caller cannot
+    # store a report and quote a different digest for it.
+    report: Mapped[dict] = mapped_column(JSON, nullable=False)
+    report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    report_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    attested_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attestation_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evaluation_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+Index("ix_model_evaluations_version", ModelEvaluation.__table__.c.model_name,
+      ModelEvaluation.__table__.c.model_version)
+Index("ix_model_evaluations_created", ModelEvaluation.__table__.c.created_at)
+Index("ix_model_evaluations_registry", ModelEvaluation.__table__.c.registry_id)
+
 
 class DatasetVersion(TimestampMixin, Base):
     """Dataset versioning: manifest + SHA256 (8K). A model must be able to
@@ -298,3 +418,31 @@ class DatasetVersion(TimestampMixin, Base):
     manifest_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     description: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class AuditLog(TimestampMixin, Base):
+    """Business operation audit journal (unified, append-only by convention).
+
+    Every protected business mutation records who (authenticated principal),
+    what (action + resource), the outcome (applied | denied) and the request
+    id. Rows are never updated or deleted through the API; the journal answers
+    "who did what when" across inspections / review / quality rules / telemetry
+    without tying itself to the model-registry lifecycle table.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)  # applied | denied
+    actor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    actor_roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    resource_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+Index("ix_audit_log_created", AuditLog.__table__.c.created_at)
+Index("ix_audit_log_actor", AuditLog.__table__.c.actor)
+Index("ix_audit_log_resource", AuditLog.__table__.c.resource_type)

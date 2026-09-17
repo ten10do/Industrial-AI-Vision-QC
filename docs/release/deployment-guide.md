@@ -12,11 +12,13 @@ This guide prepares a release candidate environment. It does not authorize produ
 ## Verify the package
 
 1. Create an isolated Python environment.
-2. Install the exact requirements referenced by `dependency-lock.json`. Install backend requirements while the working directory is `backend/`, because its editable `../packages/vision-contract` reference is relative to that directory. Install torch and torchvision from `https://download.pytorch.org/whl/cu128`.
+2. Install the qualified inference runtime from the hash lock referenced by `dependency-lock.json`: `python -m pip install --require-hashes -r model-training/registry/steel-patchcore-d3-release/1.3.0/requirements-cu130.lock`. The lock includes the CUDA 13.0 index and must be used on CPython 3.11 / Windows x86-64. On Windows, create the runtime in a short path such as `D:\ivqc-d3-runtime`; the Torch wheel contains deeply nested license paths that can exceed the legacy path limit when the virtual environment is under a long checkout path. Install backend requirements separately while the working directory is `backend/`, because its editable `../packages/vision-contract` reference is relative to that directory.
 3. Install `packages/vision-contract` from the frozen source tree.
 4. Run the release package loader. It must verify the dependency lock, candidate manifest, qualification evidence and every artifact hash before model construction.
 5. Run one 1600×256 smoke image and confirm the output contains `image_score`, `anomaly_label`, `heatmap`, `confidence`, `model_version` and `artifact_version`.
 6. Run the steel, inference and backend suites.
+
+Before release review, regenerate `docs/release/inference-dependency-audit.json` with `python inference-service/scripts/audit_steel_d3_dependencies.py`. The audit maps the CUDA-local versions (`torch==2.13.0+cu130`, `torchvision==0.28.0+cu130`) to their upstream versions only for advisory lookup; the install lock remains fixed to the hashed CUDA wheels. Any skipped dependency or known vulnerability fails the audit.
 
 ## Candidate-only start sequence
 

@@ -134,5 +134,5 @@ tool call cap、tool timeout 恢复、tool 500 恢复、LLM provider 错误恢�
    eval/E2E 在 offline 确定性模式下运行；真实 LLM 的 tool selection/grounding 需按同一 dataset 复测。
 2. 数字 grounding 采用确定性变体匹配（×100/绝对值），极端情况下允许合理缩放表示；
    这是第一版简化（9H 允许）。
-3. 对话为内存存储（TTL 6h），多 worker 部署会各自独立；产品级追溯类查询始终实时读取（9M）。
-4. 缓存未引入 Redis：统计类短 TTL 缓存留待有并发需求时再实现（9M 允许第一版不引入）。
+3. Copilot 对话已迁移到 Redis（TTL 6h、最多 200 个活跃会话）；多 worker/多副本读取同一会话状态。开发环境未配置 Redis 时仍提供单进程内存回退。
+4. 实时指标与 WebSocket 通知已使用同一 Redis 共享层；staging/production 未配置 `IVQC_REDIS_URL` 会拒绝启动，避免误用单进程回退。

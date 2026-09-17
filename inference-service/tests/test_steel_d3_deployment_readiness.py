@@ -84,7 +84,7 @@ def _assert_hold(response, *, category: str, reason_code: str, trace_id: str = "
 
 def test_docker_review_image_is_pinned_non_root_and_health_checked():
     dockerfile = (ROOT / "inference-service/Dockerfile.d3-release-review").read_text(encoding="utf-8")
-    assert "pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime@sha256:" in dockerfile
+    assert "pytorch/pytorch:2.13.0-cuda13.0-cudnn9-runtime@sha256:" in dockerfile
     assert "USER d3review:d3review" in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "COPY model-training/runs" not in dockerfile

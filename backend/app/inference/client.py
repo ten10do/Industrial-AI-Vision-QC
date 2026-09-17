@@ -60,10 +60,18 @@ class InferenceClient:
         loop = asyncio.get_running_loop()
         key = id(loop)
         client = self._clients_by_loop.get(key)
-        if client is None:
+        if client is None or client.is_closed:
             client = httpx.AsyncClient(timeout=self.timeout)
             self._clients_by_loop[key] = client
         return client
+
+    @classmethod
+    async def close_all(cls) -> None:
+        """Close every event-loop-local pool during application shutdown."""
+        clients = list(cls._clients_by_loop.values())
+        cls._clients_by_loop.clear()
+        for client in clients:
+            await client.aclose()
 
     async def infer(self, image_bytes: bytes, filename: str = "image.jpg", request_id: str | None = None) -> VisionResult:
         rid = request_id or f"req-{uuid.uuid4().hex[:12]}"

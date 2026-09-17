@@ -1,6 +1,9 @@
 """Review Queue API (Phase 5, 5C-5F).
 
-Minimal review API without RBAC; reviewer is an explicit user identifier.
+RBAC: only a reviewer (or admin) may mutate the review queue; read access
+is open to reviewers / release managers / viewers / engineers / approvers /
+pipeline / admin. The reviewer identity is the authenticated principal's
+subject; a client-supplied `reviewer` string must match it (403 otherwise).
 DB is the source of truth; WS events are notifications only.
 """
 
@@ -10,23 +13,44 @@ import csv
 import io
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..database import get_session
-from ..enums import HumanDecision
+from ..enums import HumanDecision, ReviewTaskStatus
 from ..mlops.manifest import dataset_version_for_model
 from ..models import Inspection, ReviewDecision, ReviewTask
 from ..schemas import ReviewMetricsOut, ReviewTaskOut, TrainingCandidate
+from ..security.auth import (
+    ROLE_ADMIN,
+    ROLE_APPROVER,
+    ROLE_ENGINEER,
+    ROLE_PIPELINE,
+    ROLE_RELEASE_MANAGER,
+    ROLE_REVIEWER,
+    ROLE_VIEWER,
+    Principal,
+    require_any_authenticated,
+    require_roles,
+    request_id as _request_id,
+)
+from ..services.audit_service import record as audit_record
 from ..services.review_service import ReviewConflictError, ReviewService, ReviewValidationError
 from .serializers import to_review_task_out
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["reviews"])
+
+# Separation of duties: only a reviewer (or admin) may mutate the review
+# queue; read access is open to reviewers, release managers, viewers and admins.
+RequireReviewerWrite = Depends(require_roles(ROLE_REVIEWER, ROLE_ADMIN))
+RequireReviewRead = Depends(
+    require_roles(ROLE_REVIEWER, ROLE_RELEASE_MANAGER, ROLE_VIEWER, ROLE_ENGINEER, ROLE_APPROVER, ROLE_PIPELINE, ROLE_ADMIN)
+)
 
 
 def get_review_service() -> ReviewService:
@@ -37,27 +61,44 @@ def _err(code: str, message: str) -> dict:
     return {"error": {"code": code, "message": message}}
 
 
+def _matching_reviewer(body_reviewer: str | None, actor: Principal) -> str:
+    """The human-review identity is the authenticated principal's subject.
+    A client-supplied reviewer string is accepted only when it matches the
+    token; a mismatch is a 403 impersonation attempt, never a silent no-op."""
+    if body_reviewer is not None and body_reviewer != actor.subject:
+        raise HTTPException(
+            status_code=403,
+            detail=_err(
+                "reviewer_mismatch",
+                f"reviewer in body ({body_reviewer}) does not match the authenticated principal ({actor.subject})",
+            ),
+        )
+    return actor.subject
+
+
 class ClaimIn(BaseModel):
-    reviewer: str = Field(min_length=1, max_length=64)
+    # Kept for client compatibility; the authoritative reviewer identity is
+    # the authenticated principal. A non-matching value is rejected (403).
+    reviewer: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class ResolveIn(BaseModel):
-    reviewer: str = Field(min_length=1, max_length=64)
+    reviewer: str | None = Field(default=None, min_length=1, max_length=64)
     human_decision: HumanDecision
     human_label: str | None = None
     reason: str | None = Field(default=None, max_length=1024)
 
 
 class CorrectionIn(BaseModel):
-    reviewer: str = Field(min_length=1, max_length=64)
+    reviewer: str | None = Field(default=None, min_length=1, max_length=64)
     field_changed: str = Field(min_length=1, max_length=64)
     new_value: dict
     reason: str | None = Field(default=None, max_length=1024)
 
 
-@router.get("/reviews", response_model=list[ReviewTaskOut])
+@router.get("/reviews", response_model=list[ReviewTaskOut], dependencies=[RequireReviewRead])
 async def list_reviews(
-    status: str | None = None,
+    status: ReviewTaskStatus | None = None,
     priority: int | None = Query(default=None, ge=1, le=1000),
     defect_type: str | None = None,
     production_line: str | None = None,
@@ -76,7 +117,7 @@ async def list_reviews(
     return [to_review_task_out(t) for t in tasks]
 
 
-@router.get("/reviews/{task_id}", response_model=ReviewTaskOut)
+@router.get("/reviews/{task_id}", response_model=ReviewTaskOut, dependencies=[RequireReviewRead])
 async def get_review(
     task_id: str,
     session: AsyncSession = Depends(get_session),
@@ -91,52 +132,109 @@ async def get_review(
 @router.post("/reviews/{task_id}/claim", response_model=ReviewTaskOut)
 async def claim_review(
     task_id: str,
+    request: Request,
     body: ClaimIn,
     session: AsyncSession = Depends(get_session),
     service: ReviewService = Depends(get_review_service),
+    actor: Principal = RequireReviewerWrite,
 ) -> ReviewTaskOut:
+    reviewer = _matching_reviewer(body.reviewer, actor)
     try:
-        task = await service.claim(session, task_id, body.reviewer)
+        task = await service.claim(session, task_id, reviewer)
     except ReviewConflictError as exc:
+        audit_record(
+            session, action="review.claim", actor=actor, result="denied",
+            resource_type="review_task", resource_id=task_id,
+            detail={"code": exc.code, "error": str(exc)}, request_id=_request_id(request),
+        )
+        await session.commit()
         raise HTTPException(status_code=409, detail=_err(exc.code, str(exc))) from exc
+    audit_record(
+        session, action="review.claim", actor=actor, result="applied",
+        resource_type="review_task", resource_id=task_id, request_id=_request_id(request),
+    )
+    await session.commit()
     return to_review_task_out(task)
 
 
 @router.post("/reviews/{task_id}/resolve", response_model=ReviewTaskOut)
 async def resolve_review(
     task_id: str,
+    request: Request,
     body: ResolveIn,
     session: AsyncSession = Depends(get_session),
     service: ReviewService = Depends(get_review_service),
+    actor: Principal = RequireReviewerWrite,
 ) -> ReviewTaskOut:
+    reviewer = _matching_reviewer(body.reviewer, actor)
     try:
         task = await service.resolve(
-            session, task_id, body.reviewer, body.human_decision, body.human_label, body.reason
+            session, task_id, reviewer, body.human_decision, body.human_label, body.reason
         )
     except ReviewConflictError as exc:
+        audit_record(
+            session, action="review.resolve", actor=actor, result="denied",
+            resource_type="review_task", resource_id=task_id,
+            detail={"code": exc.code, "error": str(exc)}, request_id=_request_id(request),
+        )
+        await session.commit()
         raise HTTPException(status_code=409, detail=_err(exc.code, str(exc))) from exc
     except ReviewValidationError as exc:
+        audit_record(
+            session, action="review.resolve", actor=actor, result="denied",
+            resource_type="review_task", resource_id=task_id,
+            detail={"code": exc.code, "error": str(exc)}, request_id=_request_id(request),
+        )
+        await session.commit()
         raise HTTPException(status_code=422, detail=_err(exc.code, str(exc))) from exc
+    audit_record(
+        session, action="review.resolve", actor=actor, result="applied",
+        resource_type="review_task", resource_id=task_id,
+        detail={"human_decision": body.human_decision.value if hasattr(body.human_decision, "value") else str(body.human_decision)},
+        request_id=_request_id(request),
+    )
+    await session.commit()
     return to_review_task_out(task)
 
 
 @router.post("/reviews/{task_id}/corrections", response_model=dict)
 async def add_correction(
     task_id: str,
+    request: Request,
     body: CorrectionIn,
     session: AsyncSession = Depends(get_session),
     service: ReviewService = Depends(get_review_service),
+    actor: Principal = RequireReviewerWrite,
 ) -> dict:
     """5F: append an audit correction after resolve; the original decision is
     never overwritten."""
+    reviewer = _matching_reviewer(body.reviewer, actor)
     try:
         correction = await service.add_correction(
-            session, task_id, body.reviewer, body.field_changed, body.new_value, body.reason
+            session, task_id, reviewer, body.field_changed, body.new_value, body.reason
         )
     except ReviewConflictError as exc:
+        audit_record(
+            session, action="review.correction", actor=actor, result="denied",
+            resource_type="review_task", resource_id=task_id,
+            detail={"code": exc.code, "error": str(exc)}, request_id=_request_id(request),
+        )
+        await session.commit()
         raise HTTPException(status_code=409, detail=_err(exc.code, str(exc))) from exc
     except ReviewValidationError as exc:
+        audit_record(
+            session, action="review.correction", actor=actor, result="denied",
+            resource_type="review_task", resource_id=task_id,
+            detail={"code": exc.code, "error": str(exc)}, request_id=_request_id(request),
+        )
+        await session.commit()
         raise HTTPException(status_code=422, detail=_err(exc.code, str(exc))) from exc
+    audit_record(
+        session, action="review.correction", actor=actor, result="applied",
+        resource_type="review_task", resource_id=task_id,
+        detail={"field_changed": correction.field_changed}, request_id=_request_id(request),
+    )
+    await session.commit()
     return {
         "status": "ok",
         "correction_id": str(correction.id),
@@ -145,7 +243,7 @@ async def add_correction(
     }
 
 
-@router.get("/reviews-metrics", response_model=ReviewMetricsOut)
+@router.get("/reviews-metrics", response_model=ReviewMetricsOut, dependencies=[Depends(require_roles(ROLE_REVIEWER, ROLE_RELEASE_MANAGER, ROLE_ADMIN))])
 async def review_metrics(
     session: AsyncSession = Depends(get_session),
     service: ReviewService = Depends(get_review_service),
@@ -155,7 +253,7 @@ async def review_metrics(
     return ReviewMetricsOut(**data)
 
 
-@router.get("/training-candidates", response_model=list[TrainingCandidate])
+@router.get("/training-candidates", response_model=list[TrainingCandidate], dependencies=[Depends(require_roles(ROLE_REVIEWER, ROLE_RELEASE_MANAGER, ROLE_ADMIN))])
 async def training_candidates(
     kind: str = Query(default="all", pattern="^(all|corrected|disagreed|low_confidence)$"),
     format: str = Query(default="json", pattern="^(json|csv)$"),

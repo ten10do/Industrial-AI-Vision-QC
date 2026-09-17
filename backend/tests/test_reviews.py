@@ -198,7 +198,7 @@ async def concurrent_env(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_claim_and_concurrent_claim(concurrent_env, tmp_path):
+async def test_claim_and_concurrent_claim(concurrent_env, tmp_path, auth):
     """5D: exactly one of two concurrent claims succeeds; the loser gets 409."""
     client, application, factory = concurrent_env
 
@@ -219,6 +219,7 @@ async def test_claim_and_concurrent_claim(concurrent_env, tmp_path):
     )
     resp = await client.post(
         "/api/v1/inspections",
+        headers=auth("operator"),
         files={"file": ("x.jpg", SAMPLE_JPG, "image/jpeg")},
         data={"product_id": "P-REV-3", "production_line": "line-a", "station": "qc-01"},
     )
@@ -229,8 +230,8 @@ async def test_claim_and_concurrent_claim(concurrent_env, tmp_path):
     assert task is not None
 
     results = await asyncio.gather(
-        client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"}),
-        client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "bob"}),
+        client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={}),
+        client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_b"), json={}),
         return_exceptions=False,
     )
     codes = sorted(r.status_code for r in results)
@@ -238,13 +239,13 @@ async def test_claim_and_concurrent_claim(concurrent_env, tmp_path):
     winner = next(r for r in results if r.status_code == 200).json()
     loser = next(r for r in results if r.status_code == 409).json()
     assert winner["status"] == "IN_REVIEW"
-    assert winner["assigned_to"] in ("alice", "bob")
+    assert winner["assigned_to"] in ("tester-reviewer-a", "tester-reviewer-b")
     assert loser["error"]["code"] == "already_claimed"
     assert winner["version"] == 2  # optimistic lock bumped
 
 
 @pytest.mark.asyncio
-async def test_resolve_requires_claim_and_owner(client, db_session, stub_infer):
+async def test_resolve_requires_claim_and_owner(client, db_session, stub_infer, auth):
     """5E/5F: resolving without claim or by a non-owner is rejected."""
     await _seed_rules(db_session)
     stub_infer(StubInference(result=contract(detections=[detection("crazing", 0.42, 0.06)])))
@@ -257,20 +258,20 @@ async def test_resolve_requires_claim_and_owner(client, db_session, stub_infer):
 
     r = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "PASS"},
+        headers=auth("reviewer_a"), json={"human_decision": "PASS"},
     )
     assert r.status_code == 409 and r.json()["error"]["code"] == "not_claimed"
 
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     r = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "bob", "human_decision": "PASS"},
+        headers=auth("reviewer_b"), json={"human_decision": "PASS"},
     )
     assert r.status_code == 409 and r.json()["error"]["code"] == "not_owner"
 
 
 @pytest.mark.asyncio
-async def test_resolve_pass_override(client, db_session, stub_infer):
+async def test_resolve_pass_override(client, db_session, stub_infer, auth):
     """5E: human PASS overrides AI REVIEW -> final PASS, AI judgment preserved."""
     await _seed_rules(db_session)
     stub_infer(StubInference(result=contract(detections=[detection("crazing", 0.42, 0.06)])))
@@ -281,10 +282,10 @@ async def test_resolve_pass_override(client, db_session, stub_infer):
     )
     inspection_id = resp.json()["inspection_id"]
     task = await _task_for_inspection(db_session, inspection_id)
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     r = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "PASS", "reason": "false positive"},
+        headers=auth("reviewer_a"), json={"human_decision": "PASS", "reason": "false positive"},
     )
     assert r.status_code == 200
     body = r.json()
@@ -303,7 +304,7 @@ async def test_resolve_pass_override(client, db_session, stub_infer):
 
 
 @pytest.mark.asyncio
-async def test_resolve_confirm_defect(client, db_session, stub_infer):
+async def test_resolve_confirm_defect(client, db_session, stub_infer, auth):
     """5E: confirm AI defect -> final FAIL."""
     await _seed_rules(db_session)
     stub_infer(StubInference(result=contract(detections=[detection("crazing", 0.42, 0.06)])))
@@ -313,10 +314,10 @@ async def test_resolve_confirm_defect(client, db_session, stub_infer):
         data={"product_id": "P-REV-6", "production_line": "line-a", "station": "qc-01"},
     )
     task = await _task_for_inspection(db_session, resp.json()["inspection_id"])
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     r = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CONFIRM_DEFECT", "human_label": "crazing", "reason": "visible defect"},
+        headers=auth("reviewer_a"), json={"human_decision": "CONFIRM_DEFECT", "human_label": "crazing", "reason": "visible defect"},
     )
     assert r.status_code == 200
     assert r.json()["decision"]["final_quality_result"] == "FAIL"
@@ -324,7 +325,7 @@ async def test_resolve_confirm_defect(client, db_session, stub_infer):
 
 
 @pytest.mark.asyncio
-async def test_resolve_correct_label_and_validation(client, db_session, stub_infer):
+async def test_resolve_correct_label_and_validation(client, db_session, stub_infer, auth):
     """5E: correct label -> final FAIL; confirm without a label -> 422."""
     await _seed_rules(db_session)
     stub_infer(StubInference(result=contract(detections=[detection("crazing", 0.42, 0.06)])))
@@ -334,17 +335,17 @@ async def test_resolve_correct_label_and_validation(client, db_session, stub_inf
         data={"product_id": "P-REV-7", "production_line": "line-a", "station": "qc-01"},
     )
     task = await _task_for_inspection(db_session, resp.json()["inspection_id"])
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
 
     bad = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CONFIRM_DEFECT"},
+        headers=auth("reviewer_a"), json={"human_decision": "CONFIRM_DEFECT"},
     )
     assert bad.status_code == 422
 
     r = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CORRECT_DEFECT", "human_label": "scratches", "reason": "it is scratches"},
+        headers=auth("reviewer_a"), json={"human_decision": "CORRECT_DEFECT", "human_label": "scratches", "reason": "it is scratches"},
     )
     assert r.status_code == 200
     assert r.json()["decision"]["final_quality_result"] == "FAIL"
@@ -353,7 +354,7 @@ async def test_resolve_correct_label_and_validation(client, db_session, stub_inf
 
 
 @pytest.mark.asyncio
-async def test_resolve_already_resolved_conflict(client, db_session, stub_infer):
+async def test_resolve_already_resolved_conflict(client, db_session, stub_infer, auth):
     """5F: resolving twice conflicts; second attempt gets 409."""
     await _seed_rules(db_session)
     stub_infer(StubInference(result=contract(detections=[detection("crazing", 0.42, 0.06)])))
@@ -363,15 +364,15 @@ async def test_resolve_already_resolved_conflict(client, db_session, stub_infer)
         data={"product_id": "P-REV-8", "production_line": "line-a", "station": "qc-01"},
     )
     task = await _task_for_inspection(db_session, resp.json()["inspection_id"])
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     ok = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "PASS"},
+        headers=auth("reviewer_a"), json={"human_decision": "PASS"},
     )
     assert ok.status_code == 200
     again = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CONFIRM_DEFECT", "human_label": "crazing"},
+        headers=auth("reviewer_a"), json={"human_decision": "CONFIRM_DEFECT", "human_label": "crazing"},
     )
     assert again.status_code == 409 and again.json()["error"]["code"] == "already_resolved"
     # 原决策未被覆盖
@@ -380,7 +381,7 @@ async def test_resolve_already_resolved_conflict(client, db_session, stub_infer)
 
 
 @pytest.mark.asyncio
-async def test_correction_appends_without_overwrite(client, db_session, stub_infer):
+async def test_correction_appends_without_overwrite(client, db_session, stub_infer, auth):
     """5F: post-resolve corrections append an audit record; the original
     decision stays untouched."""
     await _seed_rules(db_session)
@@ -391,14 +392,14 @@ async def test_correction_appends_without_overwrite(client, db_session, stub_inf
         data={"product_id": "P-REV-9", "production_line": "line-a", "station": "qc-01"},
     )
     task = await _task_for_inspection(db_session, resp.json()["inspection_id"])
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "PASS", "reason": "first pass"},
+        headers=auth("reviewer_a"), json={"human_decision": "PASS", "reason": "first pass"},
     )
     corr = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/corrections",
-        json={"reviewer": "bob", "field_changed": "human_decision", "new_value": {"value": "CONFIRM_DEFECT"}, "reason": "re-inspection found the defect"},
+        headers=auth("reviewer_b"), json={"field_changed": "human_decision", "new_value": {"value": "CONFIRM_DEFECT"}, "reason": "re-inspection found the defect"},
     )
     assert corr.status_code == 200
 
@@ -412,7 +413,7 @@ async def test_correction_appends_without_overwrite(client, db_session, stub_inf
 
 
 @pytest.mark.asyncio
-async def test_review_list_filters(client, db_session, stub_infer):
+async def test_review_list_filters(client, db_session, stub_infer, auth):
     """5C: queue list supports status/line/station/batch filters."""
     await _seed_rules(db_session)
     for i in range(2):
@@ -422,17 +423,17 @@ async def test_review_list_filters(client, db_session, stub_infer):
             files={"file": ("x.jpg", SAMPLE_JPG, "image/jpeg")},
             data={"product_id": f"P-REV-{i}", "production_line": f"line-{i}", "station": "qc-01", "batch_id": f"batch-{i}"},
         )
-    r = await client.get("/api/v1/reviews", params={"status": "PENDING"})
+    r = await client.get("/api/v1/reviews", headers=auth("reviewer_a"), params={"status": "PENDING"})
     assert r.status_code == 200
     assert len(r.json()) == 2
-    r = await client.get("/api/v1/reviews", params={"production_line": "line-0"})
+    r = await client.get("/api/v1/reviews", headers=auth("reviewer_a"), params={"production_line": "line-0"})
     assert len(r.json()) == 1 and r.json()[0]["product_id"] == "P-REV-0"
-    r = await client.get("/api/v1/reviews", params={"batch_id": "batch-1"})
+    r = await client.get("/api/v1/reviews", headers=auth("reviewer_a"), params={"batch_id": "batch-1"})
     assert len(r.json()) == 1
 
 
 @pytest.mark.asyncio
-async def test_training_candidates_export(client, db_session, stub_infer):
+async def test_training_candidates_export(client, db_session, stub_infer, auth):
     """5J: resolved reviews export as JSON/CSV with AI + human labels."""
     await _seed_rules(db_session)
     stub_infer(StubInference(result=contract(detections=[detection("crazing", 0.42, 0.06)])))
@@ -442,13 +443,13 @@ async def test_training_candidates_export(client, db_session, stub_infer):
         data={"product_id": "P-REV-TR", "production_line": "line-a", "station": "qc-01"},
     )
     task = await _task_for_inspection(db_session, resp.json()["inspection_id"])
-    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CORRECT_DEFECT", "human_label": "scratches", "reason": "wrong class"},
+        headers=auth("reviewer_a"), json={"human_decision": "CORRECT_DEFECT", "human_label": "scratches", "reason": "wrong class"},
     )
 
-    js = await client.get("/api/v1/training-candidates", params={"kind": "corrected"})
+    js = await client.get("/api/v1/training-candidates", headers=auth("release-manager"), params={"kind": "corrected"})
     assert js.status_code == 200
     candidates = js.json()
     assert len(candidates) == 1
@@ -462,7 +463,7 @@ async def test_training_candidates_export(client, db_session, stub_infer):
     assert candidates[0]["source_dataset_version"] is not None
     assert candidates[0]["image_url"].endswith("/image")
 
-    csv_resp = await client.get("/api/v1/training-candidates", params={"kind": "all", "format": "csv"})
+    csv_resp = await client.get("/api/v1/training-candidates", headers=auth("release-manager"), params={"kind": "all", "format": "csv"})
     assert csv_resp.status_code == 200
     assert "text/csv" in csv_resp.headers["content-type"]
     rows = list(csv.DictReader(io.StringIO(csv_resp.text)))
@@ -470,7 +471,7 @@ async def test_training_candidates_export(client, db_session, stub_infer):
 
 
 @pytest.mark.asyncio
-async def test_review_metrics_semantics(client, db_session, stub_infer):
+async def test_review_metrics_semantics(client, db_session, stub_infer, auth):
     """5K: review metrics use the documented semantics."""
     await _seed_rules(db_session)
     # 1 REVIEW (resolved with CONFIRM) + 1 PASS (no task)
@@ -489,15 +490,15 @@ async def test_review_metrics_semantics(client, db_session, stub_infer):
     tasks = await db_session.execute(select(ReviewTask))
     task = tasks.scalars().first()
     assert task is not None
-    claim_resp = await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", json={"reviewer": "alice"})
+    claim_resp = await client.post(f"/api/v1/reviews/{task.review_task_id}/claim", headers=auth("reviewer_a"), json={})
     assert claim_resp.status_code == 200, claim_resp.text
     resolve_resp = await client.post(
         f"/api/v1/reviews/{task.review_task_id}/resolve",
-        json={"reviewer": "alice", "human_decision": "CONFIRM_DEFECT", "human_label": "crazing"},
+        headers=auth("reviewer_a"), json={"human_decision": "CONFIRM_DEFECT", "human_label": "crazing"},
     )
     assert resolve_resp.status_code == 200, resolve_resp.text
 
-    m = (await client.get("/api/v1/reviews-metrics")).json()
+    m = (await client.get("/api/v1/reviews-metrics", headers=auth("reviewer_a"))).json()
     assert m["pending_review_count"] == 0
     assert m["resolved"] == 1
     assert m["review_rate"] == 0.5  # 1 REVIEW / 2 completed
@@ -506,3 +507,11 @@ async def test_review_metrics_semantics(client, db_session, stub_infer):
     assert m["override_rate"] == 0.0
     assert m["corrected_label_count"] == 0
     assert m["average_review_wait_time_s"] is not None
+
+
+@pytest.mark.asyncio
+async def test_invalid_review_status_filter_returns_422(client, auth):
+    response = await client.get(
+        "/api/v1/reviews", params={"status": "UNKNOWN"}, headers=auth("reviewer_a")
+    )
+    assert response.status_code == 422

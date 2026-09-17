@@ -49,7 +49,7 @@ async def test_metrics_snapshot_fields(client):
 
 
 @pytest.mark.asyncio
-async def test_quality_snapshot_never_mixes_timestamps(client):
+async def test_quality_snapshot_never_mixes_timestamps(client, auth):
     """Gate 1 regression: the quality snapshot (pass/review/fail/completed/
     failed/total_inspected) must stay internally consistent even when the
     pipeline captured_total lags the DB counters (telemetry interval).
@@ -58,7 +58,7 @@ async def test_quality_snapshot_never_mixes_timestamps(client):
     for i in range(2840):
         q = "PASS" if i % 3 == 0 else ("REVIEW" if i % 3 == 1 else "FAIL")
         await metrics.record_completed(q, 60.0, 12.0)
-    await client.post("/api/v1/realtime/telemetry", json={
+    await client.post("/api/v1/realtime/telemetry", headers=auth("pipeline"), json={
         "captured_total": 2800, "queued_current": 0, "processing_current": 0,
         "simulator_running": True, "worker_count": 2, "queue_size": 20,
     })
@@ -74,7 +74,7 @@ async def test_quality_snapshot_never_mixes_timestamps(client):
 
 
 @pytest.mark.asyncio
-async def test_metric_invariants_via_telemetry(client):
+async def test_metric_invariants_via_telemetry(client, auth):
     """Quality facts: pass + review + fail == completed and
     total_inspected == completed + failed. Terminal counters come from the
     backend (source of truth); pipeline captured/queued/processing come from
@@ -88,7 +88,7 @@ async def test_metric_invariants_via_telemetry(client):
     for _ in range(3):
         await metrics.record_failed()
 
-    await client.post("/api/v1/realtime/telemetry", json={
+    await client.post("/api/v1/realtime/telemetry", headers=auth("pipeline"), json={
         "captured_total": 30, "queued_current": 0, "processing_current": 0,
         "simulator_running": False, "worker_count": 2, "queue_size": 20, "queue_peak_depth": 9,
     })
@@ -100,13 +100,13 @@ async def test_metric_invariants_via_telemetry(client):
 
 
 @pytest.mark.asyncio
-async def test_running_telemetry_fields(client):
+async def test_running_telemetry_fields(client, auth):
     """Runtime telemetry is reported independently with its own timestamp."""
     for _ in range(28):
         await metrics.record_completed("PASS", 100.0, 10.0)
     for _ in range(5):
         await metrics.record_failed()
-    await client.post("/api/v1/realtime/telemetry", json={
+    await client.post("/api/v1/realtime/telemetry", headers=auth("pipeline"), json={
         "captured_total": 40, "queued_current": 5, "processing_current": 2,
         "simulator_running": True, "worker_count": 2, "queue_size": 20, "queue_peak_depth": 8,
     })
@@ -119,8 +119,8 @@ async def test_running_telemetry_fields(client):
 
 
 @pytest.mark.asyncio
-async def test_telemetry_update(client):
-    resp = await client.post("/api/v1/realtime/telemetry", json={
+async def test_telemetry_update(client, auth):
+    resp = await client.post("/api/v1/realtime/telemetry", headers=auth("pipeline"), json={
         "captured_total": 42, "queued_current": 7, "processing_current": 2,
         "simulator_running": True, "worker_count": 2, "queue_size": 20, "queue_peak_depth": 9,
     })

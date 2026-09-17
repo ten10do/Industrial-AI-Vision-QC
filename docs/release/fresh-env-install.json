@@ -1,38 +1,36 @@
 {
   "schema_version": "steel_patchcore_d3_fresh_environment_install_v1",
-  "environment": "model-training/runs/steel-d3-release-verification/clean-venv",
+  "environment": "temporary short-path CPython 3.11 environment",
   "runtime_committed": false,
   "python": "3.11.9",
   "install": {
-    "backend_requirements": "PASS",
-    "vision_contract_editable": "PASS",
+    "qualified_runtime_lock": "PASS",
+    "require_hashes": true,
+    "vision_contract_wheel": "PASS",
     "pip_check": "PASS",
-    "required_working_directory": "backend/",
-    "root_directory_attempt": "FAILED_AS_EXPECTED_RELATIVE_EDITABLE_PATH"
+    "windows_short_path_required": true
   },
   "verified_versions": {
-    "fastapi": "0.141.1",
-    "sqlalchemy": "2.0.51",
-    "httpx": "0.28.1",
+    "torch": "2.13.0+cu130",
+    "torchvision": "0.28.0+cu130",
+    "numpy": "2.4.6",
+    "pandas": "2.3.3",
     "pydantic": "2.13.4",
-    "pytest": "9.1.1",
+    "setuptools": "83.0.0",
     "vision_contract": "0.1.0"
   },
   "cuda_install": {
-    "mode": "frozen qualified runtime",
-    "torch": "2.11.0+cu128",
-    "torchvision": "0.26.0+cu128",
-    "full_fresh_cuda_wheel_install": false,
-    "declared_dependency_overlay": {
-      "numpy": "2.2.6",
-      "pandas": "3.0.5",
-      "install": "PASS",
-      "real_inference": "PASS",
-      "image_score": 0.808577299118042,
-      "heatmap_shape": [256, 1600],
-      "artifact_unchanged": true
-    }
+    "mode": "fresh hashed CUDA runtime lock",
+    "full_fresh_cuda_wheel_install": true,
+    "cuda_runtime": "13.0",
+    "cuda_available": true,
+    "gpu": "NVIDIA GeForce RTX 5060",
+    "real_inference": "PASS",
+    "image_score": 0.808577299118042,
+    "heatmap_shape": [256, 1600],
+    "artifact_unchanged": true
   },
   "verdict": "PASS",
-  "remaining_risk": "The full CUDA wheel stack was not downloaded into a second environment; artifact load and real inference used the frozen qualified CUDA runtime."
+  "remaining_risk": null,
+  "generated_at": "2026-09-01T04:36:19.9111551Z"
 }

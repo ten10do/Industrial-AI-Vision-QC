@@ -36,6 +36,10 @@ class CreateInspectionInput:
     production_line: str = "line-a"
     station: str = "qc-01"
     idempotency_key: str | None = None
+    # Client-claimed content type (informational only). The persisted
+    # image_media_type is always the server-side magic-byte detection, never
+    # this value; a mismatch is logged as a discrepancy signal.
+    media_type: str | None = None
 
 
 class InspectionService:
@@ -54,14 +58,6 @@ class InspectionService:
         inspection_id = f"insp-{uuid.uuid4().hex[:12]}"
         product = await self._get_or_create_product(session, data)
 
-        # persist the raw image before inference: every inspection (completed
-        # or failed) keeps its image for traceability; storage failure is
-        # logged but never blocks the inspection flow.
-        try:
-            get_storage().save(inspection_id, data.image_bytes)
-        except OSError:
-            logger.exception("image save failed inspection=%s", inspection_id)
-
         inspection = Inspection(
             inspection_id=inspection_id,
             product_id=product.id,
@@ -75,6 +71,29 @@ class InspectionService:
         except IntegrityError as exc:
             await session.rollback()
             raise InspectionServiceError("duplicate_request", "duplicate inspection request", 409) from exc
+
+        # P0: the raw image is the traceability anchor. If it cannot be stored
+        # the inspection MUST fail closed: no inference, no quality verdict,
+        # no RELEASE. image_path records the real on-disk URI (never the
+        # upload filename) plus content digest and detected media type.
+        try:
+            artifact = get_storage().save(inspection_id, data.image_bytes)
+        except OSError as exc:
+            inspection.status = InspectionStatus.FAILED
+            inspection.error_message = f"image storage failed: {exc}"[:500]
+            await session.commit()
+            raise InspectionServiceError(
+                "image_storage_failed", "image storage failed; inspection halted", http_status=500,
+                inspection_id=inspection_id,
+            ) from exc
+        inspection.image_path = artifact.uri
+        inspection.image_sha256 = artifact.sha256
+        inspection.image_media_type = artifact.media_type
+        if data.media_type and data.media_type.split(";")[0].strip() != artifact.media_type:
+            logger.warning(
+                "content-type discrepancy inspection=%s claimed=%s detected=%s",
+                inspection_id, data.media_type, artifact.media_type,
+            )
 
         request_id = f"req-{uuid.uuid4().hex[:12]}"
         try:
@@ -116,7 +135,6 @@ class InspectionService:
         inspection.rule_version = decision.rule_version
         inspection.inference_latency_ms = contract.inference_latency_ms
         inspection.inference_request_id = request_id
-        inspection.image_path = data.filename
 
         # ---- Phase 8: deployment traceability (8D) ----
         # stamp which AI stack version judged this inspection; answers

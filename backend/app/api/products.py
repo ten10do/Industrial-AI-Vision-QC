@@ -10,12 +10,13 @@ from sqlalchemy.orm import selectinload
 from ..database import get_session
 from ..models import Inspection, Product
 from ..schemas import InspectionOut, ProductOut
+from ..security.auth import require_any_authenticated
 from .serializers import to_inspection_out
 
 router = APIRouter(prefix="/api/v1", tags=["products"])
 
 
-@router.get("/products/{product_id}", response_model=ProductOut)
+@router.get("/products/{product_id}", response_model=ProductOut, dependencies=[Depends(require_any_authenticated())])
 async def get_product(product_id: str, session: AsyncSession = Depends(get_session)) -> Product:
     result = await session.execute(select(Product).where(Product.product_id == product_id))
     product = result.scalar_one_or_none()
@@ -24,7 +25,7 @@ async def get_product(product_id: str, session: AsyncSession = Depends(get_sessi
     return product
 
 
-@router.get("/products/{product_id}/inspections", response_model=list[InspectionOut])
+@router.get("/products/{product_id}/inspections", response_model=list[InspectionOut], dependencies=[Depends(require_any_authenticated())])
 async def get_product_inspections(product_id: str, session: AsyncSession = Depends(get_session)) -> list[InspectionOut]:
     product = (
         await session.execute(select(Product).where(Product.product_id == product_id))
