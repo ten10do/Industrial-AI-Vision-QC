@@ -40,7 +40,13 @@ async def db():
 
 
 @pytest.fixture(scope="session")
-def artifact_sha256() -> str:
+def artifact_sha256(artifact) -> str:
+    """The sha256 of the file registered as ARTIFACT_URI.
+
+    Depends on the shared ``artifact`` fixture so the file is guaranteed to
+    exist before it is hashed: on a fresh checkout (CI) there is no real
+    model, and the fixture synthesizes a stand-in at exactly this path, so
+    the hash describes the same bytes the server will re-hash."""
     return sha256_of(Path(__file__).resolve().parents[2] / ARTIFACT_URI)
 
 

@@ -108,6 +108,13 @@ TEST_TOKENS = {
 
 ARTIFACT_URI = "inference-service/models/best.pt"
 
+# Deterministic stand-in content for a fresh checkout. The real model file is
+# gitignored (datasets and model artifacts must never enter git), so CI does
+# not have it; the governance tests never load the model, they only exercise
+# server-side re-hashing, which needs *a* file at the registered path whose
+# bytes hash to the registered digest.
+_ARTIFACT_STANDIN = b"ivqc synthetic test artifact\n" * 64
+
 
 @pytest.fixture
 def auth():
@@ -121,16 +128,38 @@ def auth():
 
 @pytest.fixture(scope="session")
 def artifact():
-    """A real artifact plus the SHA256 the server will recompute for it."""
+    """An artifact plus the SHA256 the server will recompute for it.
+
+    The file must exist on every machine that runs the suite, and the real
+    model does not: it is gitignored, so a fresh checkout (CI) has no
+    ``best.pt`` at all, which is why backend-ci failed while every developer
+    machine passed. When the real artifact is absent this fixture writes a
+    deterministic stand-in at the registered path and removes it at session
+    teardown; it never overwrites a real artifact. Tests that genuinely need
+    the deployed bytes carry the ``artifact`` marker instead, which CI
+    excludes explicitly (see test_manifest_artifact_sha256_matches_files)."""
     import hashlib
 
     path = Path(__file__).resolve().parents[2] / ARTIFACT_URI
-    assert path.is_file(), f"test artifact missing: {path}"
+    created = False
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(_ARTIFACT_STANDIN)
+        created = True
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    return {"uri": ARTIFACT_URI, "sha256": h.hexdigest()}
+    try:
+        yield {"uri": ARTIFACT_URI, "sha256": h.hexdigest()}
+    finally:
+        if created:
+            # Cleanup must never fail a test (sandboxed unlink can raise);
+            # the path is gitignored, so a leak is contained.
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
 
 @pytest.fixture
