@@ -11,7 +11,7 @@
 #     -p 8080:8080 \
 #     ivqc-edge-runtime:1.0.0
 #
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
